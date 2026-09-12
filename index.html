@@ -1,0 +1,1863 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registru ORC (Google Drive)</title>
+<!-- Google Identity Services — folosit pentru autentificarea cu contul Google și
+     obținerea unui token de acces pentru Google Drive (scope drive.file, limitat
+     strict la fișierele create de această aplicație). -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F5F7FA; --surface:#FFFFFF; --surface-2:#EDF1F5; --border:#DEE3E9;
+    --text:#1B2430; --text-dim:#5C6773; --text-faint:#8B95A3;
+    --accent:#2B5C8A; --accent-ink:#1D4266; --accent-soft:#E3EDF6;
+    --gold:#A5761F; --gold-soft:#F3E9D3;
+    --good:#237A54; --good-soft:#DFF1E7;
+    --warn:#A9711A; --warn-soft:#F7EAD1;
+    --bad:#AE4235; --bad-soft:#F8E3E0;
+    --chip:#707B88; --chip-soft:#EAEDF1;
+    --archived:#8A6A45;
+    --note-text:#71883D;
+    --shadow:0 1px 2px rgba(20,30,45,.05), 0 8px 20px rgba(20,30,45,.07);
+    --radius:10px;
+    --font-display:'Newsreader',Georgia,'Times New Roman',serif;
+    --font-body:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#10141B; --surface:#171D26; --surface-2:#1D2430; --border:#2B3441;
+      --text:#E8ECF1; --text-dim:#A8B1BD; --text-faint:#707B88;
+      --accent:#75A8DC; --accent-ink:#C4DEF5; --accent-soft:#1F3247;
+      --gold:#D9AF5F; --gold-soft:#372C15;
+      --good:#5FC493; --good-soft:#153826;
+      --warn:#E3B15C; --warn-soft:#372A12;
+      --bad:#E68475; --bad-soft:#3A1E19;
+      --chip:#98A2AF; --chip-soft:#232B36;
+      --archived:#9C8564;
+      --note-text:#B1D58D;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#10141B; --surface:#171D26; --surface-2:#1D2430; --border:#2B3441;
+    --text:#E8ECF1; --text-dim:#A8B1BD; --text-faint:#707B88;
+    --accent:#75A8DC; --accent-ink:#C4DEF5; --accent-soft:#1F3247;
+    --gold:#D9AF5F; --gold-soft:#372C15;
+    --good:#5FC493; --good-soft:#153826;
+    --warn:#E3B15C; --warn-soft:#372A12;
+    --bad:#E68475; --bad-soft:#3A1E19;
+    --chip:#98A2AF; --chip-soft:#232B36;
+    --archived:#9C8564;
+    --note-text:#B1D58D;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;}
+  html{color-scheme:light dark;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body);
+    padding-inline:20px; padding-block:28px 60px; font-size:14px; line-height:1.5;
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important; transition:none!important;} }
+  .wrap{max-width:1280px; margin:0 auto; display:flex; flex-direction:column; gap:22px;}
+
+  /* header */
+  header{display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:16px;}
+  .eyebrow{font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--text-faint); font-weight:600; margin:0 0 6px;}
+  h1{font-family:var(--font-display); font-weight:600; font-size:clamp(24px,3.4vw,32px); margin:0; text-wrap:balance; color:var(--text);}
+  .subtitle{color:var(--text-dim); font-size:13px; margin:6px 0 0;}
+  #save-status{font-size:12px; color:var(--text-faint); display:flex; align-items:center; gap:6px; white-space:nowrap;}
+  #save-status .dot{width:7px; height:7px; border-radius:50%; background:var(--chip); flex:none;}
+  #save-status.ok .dot{background:var(--good);}
+  #save-status.busy .dot{background:var(--gold);}
+  #save-status.err .dot{background:var(--bad);}
+
+  #banner{display:none; background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn); border-radius:var(--radius); padding:12px 16px; font-size:13px;}
+  #banner.show{display:block;}
+
+  .drive-connect-bar{
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;
+    background:var(--accent-soft); color:var(--accent-ink); border:1px solid var(--accent);
+    border-radius:var(--radius); padding:12px 16px; font-size:13px;
+  }
+  .drive-connect-bar[hidden]{display:none;}
+
+  /* tabs */
+  .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border);}
+  .tab-btn{
+    font-family:var(--font-body); font-size:13.5px; font-weight:500; color:var(--text-dim); background:transparent;
+    border:none; border-bottom:2px solid transparent; padding:9px 4px; margin-bottom:-1px; cursor:pointer;
+  }
+  .tab-btn:hover{color:var(--text);}
+  .tab-btn.active{color:var(--accent); border-bottom-color:var(--accent); font-weight:600;}
+  .view{display:flex; flex-direction:column; gap:22px;}
+  .view[hidden]{display:none;}
+
+  /* stats */
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:10px;}
+  .tile{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow);}
+  .tile .label{font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-faint); font-weight:600;}
+  .tile .value{font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:22px; font-weight:600; margin-top:4px; color:var(--text);}
+  .tile.gold .value{color:var(--gold);}
+  .tile.good .value{color:var(--good);}
+  .tile.warn .value{color:var(--warn);}
+  .tile.bad .value{color:var(--bad);}
+
+  /* toolbar */
+  .toolbar{display:flex; flex-wrap:wrap; gap:10px; align-items:center;}
+  .toolbar input[type="search"],
+  .toolbar select{
+    font-family:var(--font-body); font-size:13px; color:var(--text); background:var(--surface);
+    border:1px solid var(--border); border-radius:8px; padding:8px 10px; height:36px;
+  }
+  .toolbar input[type="search"]{min-width:200px; flex:1 1 200px;}
+  .toolbar .spacer{flex:1 1 auto;}
+  button{font-family:var(--font-body); cursor:pointer;}
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:500; height:36px;
+    padding:0 14px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text);
+  }
+  .btn:hover{background:var(--surface-2);}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .btn.primary:hover{background:var(--accent-ink);}
+  .btn.ghost{border-color:transparent; background:transparent;}
+  .btn.danger{color:var(--bad); border-color:var(--bad);}
+  .btn.danger:hover{background:var(--bad-soft);}
+  .btn:focus-visible, input:focus-visible, select:focus-visible, .chip:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .btn[disabled]{opacity:.5; cursor:not-allowed;}
+
+  /* table */
+  .table-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; align-self:flex-start; max-width:100%;}
+  .table-scroll{overflow-x:auto;}
+  table{border-collapse:collapse; width:auto;}
+  thead th{
+    position:sticky; top:0; background:var(--surface-2); text-align:left; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--text-faint); font-weight:600; padding:7px 12px; border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  tbody td{padding:5px 12px; border-bottom:1px solid var(--border); vertical-align:middle; font-size:14.5px; line-height:1.25;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-2);}
+  td.num, th.num{font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right;}
+  td.crt, th.crt{padding-inline:8px;}
+  td[data-role="nr"]{cursor:text;}
+  td[data-role="nr"].copied-flash{background:var(--good-soft); color:var(--good); border-radius:5px;}
+  td[data-role="nr"] input{
+    width:100%; font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right;
+    font-size:14.5px; padding:2px 5px; border:1px solid var(--accent); border-radius:5px;
+    background:var(--surface); color:var(--text);
+  }
+  td.nume{font-weight:500; white-space:nowrap;}
+  td.archived{color:var(--archived);}
+  td.nota{color:var(--note-text); max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  td.luna{color:var(--text-dim); white-space:nowrap;}
+  .empty-state{padding:40px 20px; text-align:center; color:var(--text-faint); font-size:13px;}
+
+  /* status chips (toggle) */
+  .chip{
+    font-family:var(--font-body); font-size:13px; font-weight:500; border-radius:999px; border:1px solid var(--border);
+    padding:3px 9px; background:var(--chip-soft); color:var(--chip); white-space:nowrap; line-height:1.25;
+  }
+  button.chip{border-width:1px;}
+  .chip.on-accent{background:var(--accent-soft); color:var(--accent-ink); border-color:transparent;}
+  .chip.on-accent-outline{background:transparent; color:var(--accent); border-color:var(--accent);}
+  .chip.on-good{background:var(--good-soft); color:var(--good); border-color:transparent;}
+  .chip.on-gold{background:var(--gold-soft); color:var(--gold); border-color:transparent;}
+  .chip.on-bad{background:var(--bad-soft); color:var(--bad); border-color:transparent;}
+  .chip.on-archived{background:transparent; color:var(--archived); border-color:var(--archived);}
+  .chip.dashed{border-style:dashed; background:transparent;}
+  .chip.na{opacity:.45; border-style:dashed; cursor:default;}
+  .row-actions{display:flex; gap:4px; justify-content:flex-end;}
+  .icon-btn{
+    width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:7px;
+    border:1px solid transparent; background:transparent; color:var(--text-faint);
+  }
+  .icon-btn:hover{background:var(--surface-2); color:var(--text);}
+  .icon-btn.danger:hover{background:var(--bad-soft); color:var(--bad);}
+
+  /* modal */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(15,20,28,.5); display:none; align-items:flex-start; justify-content:center;
+    padding:5vh 16px; overflow-y:auto; z-index:50;
+  }
+  .modal-overlay.show{display:flex;}
+  .modal{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow);
+    width:100%; max-width:520px; padding:22px 22px 20px;
+  }
+  .modal h2{font-family:var(--font-display); font-size:20px; font-weight:600; margin:0 0 4px;}
+  .modal .modal-sub{color:var(--text-dim); font-size:12.5px; margin:0 0 16px;}
+  .field-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px 14px;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field.span2{grid-column:1 / -1;}
+  .field label{font-size:11.5px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em;}
+  .field input, .field textarea{
+    font-family:var(--font-body); font-size:13.5px; color:var(--text); background:var(--surface);
+    border:1px solid var(--border); border-radius:8px; padding:8px 10px; width:100%;
+  }
+  .field input[type="number"]{font-family:var(--font-mono);}
+  .field textarea{resize:vertical; min-height:38px; font-family:var(--font-body);}
+  .toggle-row{display:flex; flex-wrap:wrap; gap:8px;}
+  .modal-actions{display:flex; justify-content:space-between; align-items:center; margin-top:18px; gap:10px;}
+  .modal-actions .right{display:flex; gap:8px;}
+
+  .confirm-box{max-width:360px;}
+  .confirm-box p{font-size:13.5px; color:var(--text-dim); margin:0 0 16px;}
+
+  .fin-stats-modal{max-width:520px;}
+  .fin-stats-scroll{max-height:60vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px;}
+  .fin-stats-table{border-collapse:collapse; width:100%;}
+  .fin-stats-table th{
+    position:sticky; top:0; background:var(--surface-2); text-align:left; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--text-faint); font-weight:600; padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  .fin-stats-table td{padding:6px 10px; border-bottom:1px solid var(--border); font-size:13.5px;}
+  .fin-stats-table tr:last-child td{border-bottom:none;}
+  .fin-stats-table td.num, .fin-stats-table th.num{font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right;}
+  .fin-stats-table tr.fin-total td{font-weight:600; border-top:1px solid var(--border); border-bottom:none; background:var(--surface-2);}
+
+  @media (max-width:640px){
+    .field-grid{grid-template-columns:1fr;}
+    body{padding-inline:14px;}
+    header{flex-direction:column; align-items:flex-start;}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <div>
+      <p class="eyebrow">Diana Audit Expert · ORC · sincronizat cu Google Drive</p>
+      <h1>Registru dosare ORC</h1>
+      <p class="subtitle">Evidența dosarelor de înregistrare depuse la Oficiul Registrului Comerțului — datele se salvează automat într-un fișier din Google Drive-ul tău, accesibil de pe orice dispozitiv</p>
+    </div>
+    <div id="save-status"><span class="dot"></span><span id="save-status-text">se conectează…</span></div>
+  </header>
+
+  <div id="drive-connect-bar" class="drive-connect-bar" hidden>
+    <span>Nu ești conectată la Google Drive — datele nu se pot încărca sau salva până te conectezi.</span>
+    <button type="button" class="btn primary" id="btn-drive-connect">Conectează Google Drive</button>
+  </div>
+
+  <div class="tabs">
+    <button type="button" class="tab-btn active" id="tab-orc">Registru ORC</button>
+    <button type="button" class="tab-btn" id="tab-dizolvari">Registru Dizolvări</button>
+  </div>
+
+  <div id="banner"></div>
+
+  <div class="view" id="view-orc">
+    <div class="stats" id="stats"></div>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Caută după firmă sau nr. înregistrare…" autocomplete="off">
+      <select id="filter-luna"></select>
+      <select id="filter-status">
+        <option value="all">Toate stadiile</option>
+        <option value="pe-flux">Dosare pe flux (depuse și înregistrate)</option>
+        <option value="taxa-neachitata">Taxe neachitate (admise, taxă neachitată)</option>
+        <option value="neeliberate">Neeliberate (taxă achitată, neeliberate)</option>
+        <option value="eliberat">Eliberate</option>
+        <option value="nedepus">În lucru (nedepuse)</option>
+      </select>
+      <select id="sort-by">
+        <option value="nr-per-luna" selected>Sortează: nr. înregistrare</option>
+        <option value="nume-asc">Sortează: firmă (A→Z)</option>
+        <option value="luna-desc">Sortează: lună (recent → vechi)</option>
+        <option value="luna-asc">Sortează: lună (vechi → recent)</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="btn" id="btn-fin-stats">Statistici financiare</button>
+      <button class="btn" id="btn-export">Export CSV</button>
+      <button class="btn" id="btn-backup-export" title="Salvează o copie completă a datelor, ca backup separat de aplicație">Backup</button>
+      <button class="btn" id="btn-backup-import" title="Restaurează dosarele dintr-un fișier de backup salvat anterior">Restaurează backup</button>
+      <input type="file" id="backup-file-input" accept="application/json,.json" style="display:none;">
+      <button class="btn primary" id="btn-add">+ Dosar nou</button>
+    </div>
+
+    <div class="table-card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th class="num crt" title="Nr. curent">Nr.</th>
+              <th>Firmă / Client</th>
+              <th>Nr. înreg.</th>
+              <th>Notă</th>
+              <th>Stadiu dosar</th>
+              <th>Taxă</th>
+              <th>Achitat</th>
+              <th class="num">Încasat</th>
+              <th class="num">Rămas</th>
+              <th>Lună</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="empty-state" style="display:none;">Niciun dosar nu corespunde filtrelor curente.</div>
+    </div>
+  </div>
+
+  <div class="view" id="view-dizolvari" hidden>
+    <div class="stats" id="stats-dizolvari"></div>
+
+    <div class="toolbar">
+      <input type="search" id="search-dizolvari" placeholder="Caută după firmă sau CUI…" autocomplete="off">
+      <select id="filter-dizolvari">
+        <option value="active" selected>Active (netransferate)</option>
+        <option value="gata">Gata de transfer (termen expirat)</option>
+        <option value="transferate">Transferate în ORC</option>
+        <option value="all">Toate</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="btn primary" id="btn-add-dizolvare">+ Dizolvare nouă</button>
+    </div>
+
+    <div class="table-card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th class="num crt" title="Nr. curent">Nr.</th>
+              <th>Firmă</th>
+              <th>CUI</th>
+              <th>Public. M.Of.</th>
+              <th>Termen opoziție</th>
+              <th class="num">Rămas de achitat</th>
+              <th>Notă</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-dizolvari"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="empty-state-dizolvari" style="display:none;">Niciun dosar de dizolvare nu corespunde filtrelor curente.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit modal -->
+<div class="modal-overlay" id="form-overlay">
+  <div class="modal">
+    <h2 id="form-title">Dosar nou</h2>
+    <p class="modal-sub">Completează datele dosarului de înregistrare.</p>
+    <div class="field-grid">
+      <div class="field span2">
+        <label for="f-nume">Firmă / client</label>
+        <input id="f-nume" type="text" placeholder="ex. Real Instant Service SRL">
+      </div>
+      <div class="field">
+        <label for="f-nr">Nr. înregistrare ORC</label>
+        <input id="f-nr" type="text" placeholder="ex. 3667212">
+      </div>
+      <div class="field">
+        <label for="f-luna">Lună depunere</label>
+        <input id="f-luna" type="month">
+      </div>
+      <div class="field">
+        <label for="f-tarif">Încasat (lei)</label>
+        <input id="f-tarif" type="number" step="0.01" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="f-ramas">Sumă rămasă (lei)</label>
+        <input id="f-ramas" type="text" placeholder="ex. 758 sau o notă">
+      </div>
+      <div class="field span2">
+        <label>Stadiu dosar</label>
+        <div class="toggle-row" id="f-stadiu-row"></div>
+      </div>
+      <div class="field">
+        <label>Taxă</label>
+        <div class="toggle-row" id="f-taxa-row"></div>
+      </div>
+      <div class="field">
+        <label>Achitată</label>
+        <div class="toggle-row" id="f-achitat-row"></div>
+      </div>
+      <div class="field span2">
+        <label for="f-nota">Notă</label>
+        <textarea id="f-nota" rows="2" placeholder="ex. Factura Vlad, amânat, persoană fizică…"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn danger" id="btn-delete" style="display:none;">Șterge dosarul</button>
+      <div class="right">
+        <button class="btn ghost" id="btn-cancel">Anulează</button>
+        <button class="btn primary" id="btn-save">Salvează</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm delete -->
+<div class="modal-overlay" id="confirm-overlay">
+  <div class="modal confirm-box">
+    <h2>Ștergi acest dosar?</h2>
+    <p>Acțiunea nu poate fi anulată. Dosarul <strong id="confirm-name"></strong> va fi eliminat din registru.</p>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn ghost" id="confirm-cancel">Anulează</button>
+        <button class="btn danger" id="confirm-ok">Șterge</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Prompt taxă la marcarea ca Depus -->
+<div class="modal-overlay" id="taxa-prompt-overlay">
+  <div class="modal confirm-box">
+    <h2>Are taxă acest dosar?</h2>
+    <p>Dosarul <strong id="taxa-prompt-name"></strong> a fost marcat ca <strong>Depus</strong>. Selectează dacă are taxă de plătit, ca să nu uiți mai târziu.</p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="taxa-prompt-skip">Nu știu încă</button>
+      <div class="right">
+        <button class="btn" id="taxa-prompt-no">Fără taxă</button>
+        <button class="btn primary" id="taxa-prompt-yes">Cu taxă</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Restaurare din backup -->
+<div class="modal-overlay" id="import-prompt-overlay">
+  <div class="modal confirm-box">
+    <h2>Restaurezi din backup?</h2>
+    <p>Fișierul selectat conține <strong id="import-prompt-count"></strong> dosare. Cele care există deja (după ID) vor fi suprascrise cu versiunea din fișier; dosarele adăugate ulterior backup-ului nu sunt șterse.</p>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn ghost" id="import-prompt-cancel">Anulează</button>
+        <button class="btn primary" id="import-prompt-ok">Restaurează</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Statistici financiare pe lună -->
+<div class="modal-overlay" id="fin-stats-overlay">
+  <div class="modal fin-stats-modal">
+    <h2>Statistici financiare pe lună</h2>
+    <p class="modal-sub">Tarife încasate și sumă rămasă netă, pe fiecare lună — nu apar în antetul principal.</p>
+    <div class="fin-stats-scroll">
+      <table class="fin-stats-table">
+        <thead>
+          <tr>
+            <th>Lună</th>
+            <th class="num">Dosare</th>
+            <th class="num">Încasat (tarife)</th>
+            <th class="num">Rămas net</th>
+          </tr>
+        </thead>
+        <tbody id="fin-stats-body"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn ghost" id="fin-stats-close">Închide</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit modal — dizolvări -->
+<div class="modal-overlay" id="form-dizolvare-overlay">
+  <div class="modal">
+    <h2 id="form-dizolvare-title">Dizolvare nouă</h2>
+    <p class="modal-sub">Completează datele dosarului de dizolvare.</p>
+    <div class="field-grid">
+      <div class="field span2">
+        <label for="fd-nume">Firmă</label>
+        <input id="fd-nume" type="text" placeholder="ex. Real Instant Service SRL">
+      </div>
+      <div class="field">
+        <label for="fd-cui">CUI</label>
+        <input id="fd-cui" type="text" placeholder="ex. RO12345678">
+      </div>
+      <div class="field">
+        <label for="fd-data-mof">Data publicării în M.Of.</label>
+        <input id="fd-data-mof" type="date">
+      </div>
+      <div class="field span2">
+        <label>Rămas de achitat</label>
+        <div class="toggle-row" id="fd-achitat-row"></div>
+      </div>
+      <div class="field span2" id="fd-ramas-field">
+        <label for="fd-ramas">Mai achită (lei)</label>
+        <input id="fd-ramas" type="text" placeholder="ex. 500 sau o notă">
+      </div>
+      <div class="field span2">
+        <label for="fd-nota">Notă</label>
+        <textarea id="fd-nota" rows="2" placeholder="ex. așteaptă certificat fiscal…"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn danger" id="btn-delete-dizolvare" style="display:none;">Șterge dizolvarea</button>
+      <div class="right">
+        <button class="btn ghost" id="btn-cancel-dizolvare">Anulează</button>
+        <button class="btn primary" id="btn-save-dizolvare">Salvează</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm delete — dizolvări -->
+<div class="modal-overlay" id="confirm-dizolvare-overlay">
+  <div class="modal confirm-box">
+    <h2>Ștergi această dizolvare?</h2>
+    <p>Acțiunea nu poate fi anulată. Dosarul <strong id="confirm-dizolvare-name"></strong> va fi eliminat din registrul de dizolvări.</p>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn ghost" id="confirm-dizolvare-cancel">Anulează</button>
+        <button class="btn danger" id="confirm-dizolvare-ok">Șterge</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm transfer în Registrul ORC -->
+<div class="modal-overlay" id="transfer-overlay">
+  <div class="modal confirm-box">
+    <h2>Transferi în Registrul ORC?</h2>
+    <p>Se va crea un dosar nou în Registrul ORC pentru <strong id="transfer-name"></strong>, cu firma precompletată. Dizolvarea rămâne în acest registru, marcată drept transferată.</p>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn ghost" id="transfer-cancel">Anulează</button>
+        <button class="btn primary" id="transfer-ok">Transferă</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var LUNI_RO = ["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iulie","August","Septembrie","Octombrie","Noiembrie","Decembrie"];
+
+  function fmtLunaFromKey(key){
+    if(!key) return "";
+    var parts = key.split("-");
+    var y = parts[0], m = parseInt(parts[1],10);
+    if(!m || m<1 || m>12) return key;
+    return LUNI_RO[m-1] + " " + y;
+  }
+
+  function nowIso(){ return new Date().toISOString(); }
+
+  function uid(){ return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+  function escapeHtml(s){
+    return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function fmtMoney(n){
+    if(n==null || isNaN(n)) return "—";
+    return new Intl.NumberFormat('ro-RO', {minimumFractionDigits:0, maximumFractionDigits:2}).format(n);
+  }
+
+  function parseNumericLoose(v){
+    if(v==null) return null;
+    if(typeof v === 'number') return isNaN(v) ? null : v;
+    var s = String(v).trim().replace(',', '.');
+    var m = s.match(/-?\d+(\.\d+)?/);
+    if(!m) return null;
+    var n = parseFloat(m[0]);
+    return isNaN(n) ? null : n;
+  }
+
+  function fmtDateRo(isoDate){
+    if(!isoDate) return "";
+    var parts = isoDate.split("-");
+    if(parts.length !== 3) return isoDate;
+    return parts[2] + "." + parts[1] + "." + parts[0];
+  }
+
+  // Termenul de opoziție e informativ (30 de zile calendaristice de la data publicării în
+  // M.Of.) — util ca reper pentru momentul din care dosarul poate fi transferat în ORC.
+  // Ultima zi a termenului (ziua 30) încă se consideră "în termen" — abia din ziua
+  // următoare (ziua 31) termenul e depășit și se marchează cu verde.
+  function termenOpozitieInfo(dataMof){
+    if(!dataMof) return null;
+    var start = new Date(dataMof + 'T00:00:00');
+    if(isNaN(start.getTime())) return null;
+    var termen = new Date(start.getTime() + TERMEN_OPOZITIE_ZILE*24*60*60*1000);
+    var today = new Date(); today.setHours(0,0,0,0);
+    var zileRamase = Math.floor((termen.getTime() - today.getTime()) / (24*60*60*1000));
+    var iso = termen.getFullYear() + '-' + String(termen.getMonth()+1).padStart(2,'0') + '-' + String(termen.getDate()).padStart(2,'0');
+    return { dataText: fmtDateRo(iso), expired: zileRamase < 0, zileRamase: zileRamase };
+  }
+
+  // ---------- state ----------
+  var db = null;
+  var downloads = null;
+  var docs = []; // {id, ...data}
+  var editingId = null;
+  var pendingDeleteId = null;
+  var pendingTaxaPromptId = null;
+  var pendingImportList = null;
+
+  var formState = { stadiu:'in-lucru', areTaxa:null, taxaAchitata:null };
+
+  // ---------- state — dizolvări ----------
+  var dizolvariDocs = [];
+  var editingDizolvareId = null;
+  var pendingDeleteDizolvareId = null;
+  var pendingTransferId = null;
+  var formStateDizolvare = { achitatIntegral:false };
+  var TERMEN_OPOZITIE_ZILE = 30; // termen orientativ (Legea 31/1990, art. 62) — de la data publicării în M.Of.
+
+  var els = {};
+  ["search","filter-luna","filter-status","sort-by","stats","tbody","empty-state",
+   "btn-add","btn-export","form-overlay","form-title","f-nume","f-nr","f-luna","f-tarif","f-ramas","f-nota",
+   "f-stadiu-row","f-taxa-row","f-achitat-row",
+   "btn-save","btn-cancel","btn-delete","confirm-overlay","confirm-name","confirm-cancel","confirm-ok",
+   "save-status","save-status-text","banner","drive-connect-bar","btn-drive-connect",
+   "btn-fin-stats","fin-stats-overlay","fin-stats-body","fin-stats-close",
+   "taxa-prompt-overlay","taxa-prompt-name","taxa-prompt-skip","taxa-prompt-no","taxa-prompt-yes",
+   "btn-backup-export","btn-backup-import","backup-file-input",
+   "import-prompt-overlay","import-prompt-count","import-prompt-cancel","import-prompt-ok",
+   "tab-orc","tab-dizolvari","view-orc","view-dizolvari",
+   "search-dizolvari","filter-dizolvari","stats-dizolvari","tbody-dizolvari","empty-state-dizolvari",
+   "btn-add-dizolvare","form-dizolvare-overlay","form-dizolvare-title",
+   "fd-nume","fd-cui","fd-data-mof","fd-achitat-row","fd-ramas-field","fd-ramas","fd-nota",
+   "btn-save-dizolvare","btn-cancel-dizolvare","btn-delete-dizolvare",
+   "confirm-dizolvare-overlay","confirm-dizolvare-name","confirm-dizolvare-cancel","confirm-dizolvare-ok",
+   "transfer-overlay","transfer-name","transfer-cancel","transfer-ok"
+  ].forEach(function(id){ els[id.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})] = document.getElementById(id); });
+
+  function setSaveStatus(kind, text){
+    els.saveStatus.className = kind;
+    els.saveStatusText.textContent = text;
+  }
+
+  function showBanner(msg){
+    els.banner.textContent = msg;
+    els.banner.classList.add('show');
+  }
+
+  // ---------- tabs ----------
+  function switchTab(tab){
+    var toOrc = (tab === 'orc');
+    els.viewOrc.hidden = !toOrc;
+    els.viewDizolvari.hidden = toOrc;
+    els.tabOrc.classList.toggle('active', toOrc);
+    els.tabDizolvari.classList.toggle('active', !toOrc);
+  }
+  els.tabOrc.addEventListener('click', function(){ switchTab('orc'); });
+  els.tabDizolvari.addEventListener('click', function(){ switchTab('dizolvari'); });
+
+  // ---------- toggle groups ----------
+  function renderToggleGroup(container, options, current, onPick){
+    container.innerHTML = "";
+    options.forEach(function(opt){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (current === opt.value ? (' ' + opt.onClass) : ' dashed');
+      b.textContent = opt.label;
+      b.addEventListener('click', function(){ onPick(opt.value); });
+      container.appendChild(b);
+    });
+  }
+
+  function renderFormToggles(){
+    renderToggleGroup(els.fStadiuRow, [
+      {value:'in-lucru', label:'În lucru', onClass:''},
+      {value:'depus', label:'Depus', onClass:'on-accent-outline'},
+      {value:'admis', label:'Admis', onClass:'on-good'},
+      {value:'eliberat', label:'Eliberat', onClass:'on-archived'}
+    ], formState.stadiu, function(v){ formState.stadiu = v; renderFormToggles(); });
+
+    renderToggleGroup(els.fTaxaRow, [
+      {value:null, label:'Necunoscut', onClass:''},
+      {value:true, label:'Cu taxă', onClass:'on-gold'},
+      {value:false, label:'Fără taxă', onClass:''}
+    ], formState.areTaxa, function(v){
+      formState.areTaxa = v;
+      if(v !== true) formState.taxaAchitata = null;
+      else if(formState.taxaAchitata == null) formState.taxaAchitata = false;
+      renderFormToggles();
+    });
+
+    if(formState.areTaxa === true){
+      renderToggleGroup(els.fAchitatRow, [
+        {value:false, label:'Neachitată', onClass:'on-bad'},
+        {value:true, label:'Achitată', onClass:'on-good'}
+      ], formState.taxaAchitata, function(v){ formState.taxaAchitata = v; renderFormToggles(); });
+    } else {
+      els.fAchitatRow.innerHTML = '<span class="chip na">nu se aplică</span>';
+    }
+  }
+
+  // ---------- month options ----------
+  // La prima încărcare cu date reale, vizualizarea standard se deschide pe luna curentă
+  // (dacă există dosare în luna curentă); ulterior respectă alegerea utilizatoarei.
+  var monthFilterInitialized = false;
+  function refreshMonthFilterOptions(){
+    var keys = {};
+    docs.forEach(function(d){ if(d.lunaKey) keys[d.lunaKey] = d.luna || fmtLunaFromKey(d.lunaKey); });
+    var sortedKeys = Object.keys(keys).sort().reverse();
+    var current = els.filterLuna.value || 'all';
+    if(!monthFilterInitialized && docs.length){
+      var now = new Date();
+      var curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+      if(sortedKeys.indexOf(curKey) !== -1) current = curKey;
+      monthFilterInitialized = true;
+    }
+    els.filterLuna.innerHTML = '<option value="all">Toate lunile</option>' +
+      sortedKeys.map(function(k){ return '<option value="'+k+'">'+escapeHtml(keys[k])+'</option>'; }).join('');
+    els.filterLuna.value = sortedKeys.indexOf(current) !== -1 ? current : 'all';
+  }
+
+  // ---------- filtering / sorting ----------
+  function getFiltered(){
+    var q = els.search.value.trim().toLowerCase();
+    var lunaF = els.filterLuna.value;
+    var statusF = els.filterStatus.value;
+    var list = docs.filter(function(d){
+      if(lunaF !== 'all' && d.lunaKey !== lunaF) return false;
+      if(q){
+        var hay = (d.nume||'').toLowerCase() + ' ' + (d.nrInregistrare||'').toLowerCase();
+        if(hay.indexOf(q) === -1) return false;
+      }
+      if(statusF === 'pe-flux' && !(d.depus && !d.admis && !d.eliberat)) return false;
+      if(statusF === 'taxa-neachitata' && !(d.admis && !d.eliberat && d.areTaxa === true && d.taxaAchitata !== true)) return false;
+      if(statusF === 'neeliberate' && !(d.admis && !d.eliberat && !(d.areTaxa === true && d.taxaAchitata !== true))) return false;
+      if(statusF === 'eliberat' && !d.eliberat) return false;
+      if(statusF === 'nedepus' && d.depus) return false;
+      return true;
+    });
+    var sortBy = els.sortBy.value;
+    list.sort(function(a,b){
+      switch(sortBy){
+        case 'luna-asc': return (a.lunaKey||'').localeCompare(b.lunaKey||'') || cmpStadiuThenNr(a,b);
+        case 'nume-asc': return (a.nume||'').localeCompare(b.nume||'');
+        case 'nr-per-luna': return (a.lunaKey||'').localeCompare(b.lunaKey||'') || cmpStadiuThenNr(a,b);
+        case 'luna-desc':
+        default: return (b.lunaKey||'').localeCompare(a.lunaKey||'') || cmpStadiuThenNr(a,b);
+      }
+    });
+    return list;
+  }
+  // Compares by nr. înregistrare, ascending — dosare fără nr. înregistrare merg mereu la coadă.
+  function cmpNr(a,b){
+    var na = parseNumericLoose(a.nrInregistrare), nb = parseNumericLoose(b.nrInregistrare);
+    var aEmpty = (na == null), bEmpty = (nb == null);
+    if(aEmpty && bEmpty) return (a.nrInregistrare||'').localeCompare(b.nrInregistrare||'');
+    if(aEmpty) return 1;
+    if(bEmpty) return -1;
+    return na - nb;
+  }
+  // Rangul stadiului dosarului — cu cât mai mic, cu atât mai "avansat"; folosit ca să
+  // dosarele mutate din "În lucru" în "Depus" (sau mai departe) urce automat deasupra
+  // celor rămase "În lucru", în cadrul aceleiași luni.
+  // "Înregistrat" nu e un câmp separat — e dedus automat din prezența nr. de înregistrare
+  // pe un dosar aflat în stadiul "Depus".
+  function rawStadiuRank(d){
+    if(d.eliberat) return 0;
+    if(d.admis) return 1;
+    if(d.depus && d.nrInregistrare) return 2; // înregistrat
+    if(d.depus) return 3; // depus, fără nr. încă
+    return 4; // în lucru (nedepus)
+  }
+  // Cât timp un dosar are rangul "fixat" (imediat după ce i s-a schimbat stadiul din tabel),
+  // folosim rangul vechi în loc de cel curent — astfel rândul nu sare instant în tabel, ca
+  // să se poată da click de mai multe ori la rând ca să se ajungă la stadiul dorit.
+  var pinnedStadiuRank = {}; // id -> {rank, timer}
+  function stadiuRank(d){
+    var pin = pinnedStadiuRank[d.id];
+    return pin ? pin.rank : rawStadiuRank(d);
+  }
+  function cmpStadiuThenNr(a,b){
+    var ra = stadiuRank(a), rb = stadiuRank(b);
+    if(ra !== rb) return ra - rb;
+    return cmpNr(a,b);
+  }
+
+  // ---------- stats ----------
+  function renderStats(list){
+    var count = list.length;
+    var admisTaxaNeachitata = 0, admisNeeliberat = 0, peFlux = 0, inLucru = 0;
+    list.forEach(function(d){
+      if(d.admis && !d.eliberat && d.areTaxa === true && d.taxaAchitata !== true) admisTaxaNeachitata++;
+      if(d.admis && !d.eliberat) admisNeeliberat++;
+      if(d.depus && !d.admis && !d.eliberat) peFlux++; // înregistrate + depuse, la ORC
+      if(!d.depus) inLucru++;
+    });
+    var tiles = [
+      {label:'Dosare', value: count, cls:''},
+      {label:'Admis, taxă neachitată', value: admisTaxaNeachitata, cls:'bad'},
+      {label:'Admis, neeliberat', value: admisNeeliberat, cls:'warn'},
+      {label:'Dosare pe flux', value: peFlux, cls:''},
+      {label:'În lucru (nedepuse)', value: inLucru, cls:''}
+    ];
+    els.stats.innerHTML = tiles.map(function(t){
+      return '<div class="tile '+t.cls+'"><div class="label">'+escapeHtml(t.label)+'</div><div class="value">'+escapeHtml(String(t.value))+'</div></div>';
+    }).join('');
+  }
+
+  // ---------- table row chips (inline, clickable to cycle) ----------
+  function inlineChip(label, cls){
+    return '<button type="button" class="chip'+(cls?(' '+cls):'')+'">'+escapeHtml(label)+'</button>';
+  }
+
+  function renderTable(){
+    refreshMonthFilterOptions();
+    var list = getFiltered();
+    renderStats(list);
+
+    if(list.length === 0){
+      els.tbody.innerHTML = '';
+      els.emptyState.style.display = 'block';
+      return;
+    }
+    els.emptyState.style.display = 'none';
+
+    var crtCounts = {};
+    els.tbody.innerHTML = list.map(function(d){
+      var lunaKeyForCrt = d.lunaKey || '—';
+      crtCounts[lunaKeyForCrt] = (crtCounts[lunaKeyForCrt] || 0) + 1;
+      var nrCrt = crtCounts[lunaKeyForCrt];
+
+      var stadiuChip;
+      if(d.eliberat) stadiuChip = inlineChip('Eliberat', 'on-archived');
+      else if(d.admis) stadiuChip = inlineChip('Admis', 'on-good');
+      else if(d.depus) stadiuChip = d.nrInregistrare ? inlineChip('Înregistrat', 'on-accent') : inlineChip('Depus', 'on-accent-outline');
+      else stadiuChip = inlineChip('În lucru', '');
+      var taxaNeachitataDupaAdmitere = !!(d.admis && !d.eliberat && d.areTaxa === true && d.taxaAchitata !== true);
+
+      var taxaChip, achitatChip;
+      if(d.eliberat){
+        // Dosar închis: taxă/achitat devin neutre, la fel ca stadiul dosarului — nu mai trebuie să sară în ochi.
+        if(d.areTaxa === true) taxaChip = inlineChip('Cu taxă', '');
+        else if(d.areTaxa === false) taxaChip = inlineChip('Fără taxă', '');
+        else taxaChip = inlineChip('?', 'dashed');
+        if(d.areTaxa !== true) achitatChip = '<span class="chip na">—</span>';
+        else achitatChip = inlineChip(d.taxaAchitata ? 'Achitată' : 'Neachitată', '');
+      } else {
+        if(taxaNeachitataDupaAdmitere) taxaChip = inlineChip('Cu taxă', 'on-bad');
+        else if(d.areTaxa === true) taxaChip = inlineChip('Cu taxă', 'on-gold');
+        else if(d.areTaxa === false) taxaChip = inlineChip('Fără taxă', '');
+        else taxaChip = inlineChip('?', 'dashed');
+        if(d.areTaxa !== true) achitatChip = '<span class="chip na">—</span>';
+        else if(d.taxaAchitata === true) achitatChip = inlineChip('Achitată', 'on-good');
+        else if(d.admis) achitatChip = inlineChip('Neachitată', 'on-bad');
+        else achitatChip = inlineChip('Neachitată', '');
+      }
+
+      var ramasDisplay = d.sumaRamasa != null ? fmtMoney(d.sumaRamasa) : (d.sumaRamasaText || '—');
+      var archivedCls = d.eliberat ? ' archived' : '';
+      var nrTitle = d.nrInregistrare ? 'Dublu-click pentru a copia nr. de înregistrare' : 'Dublu-click pentru a introduce nr. de înregistrare';
+
+      return '<tr data-id="'+d.id+'">' +
+        '<td class="num crt'+archivedCls+'">'+nrCrt+'</td>' +
+        '<td class="nume'+archivedCls+'">'+escapeHtml(d.nume)+'</td>' +
+        '<td class="num'+archivedCls+'" data-role="nr" title="'+escapeHtml(nrTitle)+'">'+escapeHtml(d.nrInregistrare||'—')+'</td>' +
+        '<td class="nota" title="'+escapeHtml(d.nota||'')+'">'+escapeHtml(d.nota||'')+'</td>' +
+        '<td data-role="stadiu">'+stadiuChip+'</td>' +
+        '<td data-role="taxa">'+taxaChip+'</td>' +
+        '<td data-role="achitat">'+achitatChip+'</td>' +
+        '<td class="num">'+ (d.tarif!=null ? fmtMoney(d.tarif) : '—') +'</td>' +
+        '<td class="num">'+ escapeHtml(ramasDisplay) +'</td>' +
+        '<td class="luna">'+escapeHtml(d.luna||fmtLunaFromKey(d.lunaKey))+'</td>' +
+        '<td><div class="row-actions">' +
+          '<button class="icon-btn" data-act="edit" title="Editează">✎</button>' +
+          '<button class="icon-btn danger" data-act="del" title="Șterge">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // ---------- db writes ----------
+  function docRef(id){ return db.collection('dosare').doc(id); }
+
+  function patchDoc(id, patch){
+    if(!db){ showBanner('Stocarea nu este disponibilă în această vizualizare — modificările nu se salvează.'); return; }
+    setSaveStatus('busy', 'se salvează…');
+    patch.updatedAt = nowIso();
+    docRef(id).update(patch).then(function(){
+      setSaveStatus('ok', 'salvat');
+    }).catch(function(e){
+      setSaveStatus('err', 'eroare la salvare');
+      console.error(e);
+    });
+  }
+
+  // Ciclează Stadiul dosarului: În lucru → Depus (→ Înregistrat, automat, dacă are nr.) → Admis → Eliberat → În lucru.
+  // Când un dosar avansează în stadiu, rangul lui de sortare scade automat, deci la
+  // următoarea randare urcă deasupra celor rămase în urmă. Poziția rândului rămâne însă
+  // fixată o clipă (STADIU_PIN_DELAY_MS) după fiecare click, ca să se poată da click de mai
+  // multe ori la rând (ca să se ajungă la stadiul dorit) fără ca rândul să sară în tabel
+  // de fiecare dată. Abia după o mică pauză fără clickuri, rândul sare la poziția corectă.
+  var STADIU_PIN_DELAY_MS = 1800;
+  function cycleStadiu(d){
+    var enteringDepus = (!d.depus && !d.admis && !d.eliberat);
+    var patch;
+    if(enteringDepus) patch = {depus:true, admis:false, eliberat:false};
+    else if(d.depus && !d.admis && !d.eliberat) patch = {depus:true, admis:true, eliberat:false};
+    else if(d.admis && !d.eliberat) patch = {depus:true, admis:true, eliberat:true};
+    else patch = {depus:false, admis:false, eliberat:false};
+
+    var existingPin = pinnedStadiuRank[d.id];
+    var rankToPin = existingPin ? existingPin.rank : rawStadiuRank(d);
+    if(existingPin) clearTimeout(existingPin.timer);
+    var timer = setTimeout(function(){
+      delete pinnedStadiuRank[d.id];
+      renderTable();
+    }, STADIU_PIN_DELAY_MS);
+    pinnedStadiuRank[d.id] = {rank: rankToPin, timer: timer};
+
+    patchDoc(d.id, patch);
+
+    // La trecerea în "Depus", dacă nu se știe încă dacă are taxă, întreabă imediat —
+    // ca să nu rămână uitat și descoperit abia mai târziu.
+    if(enteringDepus && d.areTaxa == null) openTaxaPrompt(d);
+  }
+
+  // ---------- prompt taxă la marcarea ca Depus ----------
+  function openTaxaPrompt(d){
+    pendingTaxaPromptId = d.id;
+    els.taxaPromptName.textContent = d.nume;
+    els.taxaPromptOverlay.classList.add('show');
+  }
+  function closeTaxaPrompt(){ els.taxaPromptOverlay.classList.remove('show'); pendingTaxaPromptId = null; }
+  els.taxaPromptSkip.addEventListener('click', closeTaxaPrompt);
+  els.taxaPromptOverlay.addEventListener('click', function(e){ if(e.target === els.taxaPromptOverlay) closeTaxaPrompt(); });
+  els.taxaPromptNo.addEventListener('click', function(){
+    if(pendingTaxaPromptId) patchDoc(pendingTaxaPromptId, {areTaxa:false, taxaAchitata:null});
+    closeTaxaPrompt();
+  });
+  els.taxaPromptYes.addEventListener('click', function(){
+    if(pendingTaxaPromptId) patchDoc(pendingTaxaPromptId, {areTaxa:true});
+    closeTaxaPrompt();
+  });
+  function cycleTaxa(d){
+    var next;
+    if(d.areTaxa == null) next = true;
+    else if(d.areTaxa === true) next = false;
+    else next = null;
+    var patch = {areTaxa: next};
+    if(next !== true) patch.taxaAchitata = null;
+    patchDoc(d.id, patch);
+  }
+  function cycleAchitat(d){
+    if(d.areTaxa !== true) return;
+    patchDoc(d.id, {taxaAchitata: !d.taxaAchitata});
+  }
+  els.tbody.addEventListener('click', function(e){
+    var tr = e.target.closest('tr[data-id]');
+    if(!tr) return;
+    var id = tr.getAttribute('data-id');
+    var d = docs.find(function(x){ return x.id === id; });
+    if(!d) return;
+
+    var actBtn = e.target.closest('[data-act]');
+    if(actBtn){
+      if(actBtn.dataset.act === 'edit') openEdit(d);
+      if(actBtn.dataset.act === 'del') openConfirmDelete(d);
+      return;
+    }
+    var cell = e.target.closest('td[data-role]');
+    if(!cell) return;
+    var role = cell.getAttribute('data-role');
+    if(role === 'stadiu') cycleStadiu(d);
+    if(role === 'taxa') cycleTaxa(d);
+    if(role === 'achitat') cycleAchitat(d);
+  });
+
+  // Editare rapidă a nr. de înregistrare direct din tabel, cu dublu-click pe celulă —
+  // fără să mai fie nevoie de deschiderea formularului de detalii.
+  function startInlineNrEdit(cell, d){
+    if(cell.querySelector('input')) return;
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.value = d.nrInregistrare || '';
+    cell.innerHTML = '';
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+
+    var settled = false;
+    function finish(){
+      if(settled) return;
+      settled = true;
+      var val = input.value.trim();
+      if(val !== (d.nrInregistrare||'')) patchDoc(d.id, {nrInregistrare: val});
+      else renderTable();
+    }
+    input.addEventListener('blur', finish);
+    input.addEventListener('keydown', function(ev){
+      if(ev.key === 'Enter'){ ev.preventDefault(); input.blur(); }
+      if(ev.key === 'Escape'){ ev.preventDefault(); input.value = d.nrInregistrare || ''; input.blur(); }
+    });
+  }
+
+  // Când nr. de înregistrare există deja, dublu-clickul nu mai deschide editarea — copiază
+  // valoarea direct în clipboard, ca să fie gata de lipit în altă parte.
+  function selectCellText(cell){
+    var range = document.createRange();
+    range.selectNodeContents(cell);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  function copyNrToClipboard(cell, d){
+    var text = d.nrInregistrare || '';
+    function flashCopied(){
+      cell.textContent = 'Copiat ✓';
+      cell.classList.add('copied-flash');
+      setTimeout(function(){ renderTable(); }, 900);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(flashCopied).catch(function(){ selectCellText(cell); });
+    } else {
+      selectCellText(cell);
+    }
+  }
+
+  els.tbody.addEventListener('dblclick', function(e){
+    var cell = e.target.closest('td[data-role="nr"]');
+    if(!cell) return;
+    var tr = cell.closest('tr[data-id]');
+    if(!tr) return;
+    var d = docs.find(function(x){ return x.id === tr.getAttribute('data-id'); });
+    if(!d) return;
+    if(d.nrInregistrare) copyNrToClipboard(cell, d);
+    else startInlineNrEdit(cell, d);
+  });
+
+  // ---------- add/edit modal ----------
+  function openAdd(){
+    editingId = null;
+    els.formTitle.textContent = 'Dosar nou';
+    els.btnDelete.style.display = 'none';
+    els.fNume.value = '';
+    els.fNr.value = '';
+    var d = new Date();
+    els.fLuna.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    els.fTarif.value = '';
+    els.fRamas.value = '';
+    els.fNota.value = '';
+    formState = {stadiu:'in-lucru', areTaxa:null, taxaAchitata:null};
+    renderFormToggles();
+    els.formOverlay.classList.add('show');
+    els.fNume.focus();
+  }
+
+  function openEdit(d){
+    editingId = d.id;
+    els.formTitle.textContent = 'Editează dosarul';
+    els.btnDelete.style.display = '';
+    els.fNume.value = d.nume || '';
+    els.fNr.value = d.nrInregistrare || '';
+    els.fLuna.value = d.lunaKey || '';
+    els.fTarif.value = d.tarif != null ? d.tarif : '';
+    els.fRamas.value = d.sumaRamasa != null ? d.sumaRamasa : (d.sumaRamasaText || '');
+    els.fNota.value = d.nota || '';
+    var stadiu = d.eliberat ? 'eliberat' : (d.admis ? 'admis' : (d.depus ? 'depus' : 'in-lucru'));
+    formState = {stadiu: stadiu, areTaxa: (d.areTaxa===true||d.areTaxa===false)?d.areTaxa:null, taxaAchitata: d.taxaAchitata===true};
+    if(d.areTaxa !== true) formState.taxaAchitata = null;
+    renderFormToggles();
+    els.formOverlay.classList.add('show');
+    els.fNume.focus();
+  }
+
+  function closeForm(){ els.formOverlay.classList.remove('show'); }
+
+  els.btnAdd.addEventListener('click', openAdd);
+  els.btnCancel.addEventListener('click', closeForm);
+  els.formOverlay.addEventListener('click', function(e){ if(e.target === els.formOverlay) closeForm(); });
+
+  els.btnSave.addEventListener('click', function(){
+    var nume = els.fNume.value.trim();
+    if(!nume){ els.fNume.focus(); return; }
+    var lunaKey = els.fLuna.value || '';
+    var ramasRaw = els.fRamas.value.trim();
+    var ramasNum = ramasRaw === '' ? null : parseNumericLoose(ramasRaw);
+    var ramasIsPureNumber = ramasRaw !== '' && /^-?\d+([.,]\d+)?$/.test(ramasRaw);
+
+    var data = {
+      nume: nume,
+      nrInregistrare: els.fNr.value.trim(),
+      lunaKey: lunaKey,
+      luna: fmtLunaFromKey(lunaKey) || lunaKey,
+      tarif: els.fTarif.value === '' ? null : parseFloat(els.fTarif.value),
+      sumaRamasa: ramasIsPureNumber ? ramasNum : null,
+      sumaRamasaText: ramasIsPureNumber ? null : (ramasRaw || null),
+      admis: (formState.stadiu === 'admis' || formState.stadiu === 'eliberat'),
+      depus: (formState.stadiu === 'admis' || formState.stadiu === 'depus' || formState.stadiu === 'eliberat'),
+      eliberat: formState.stadiu === 'eliberat',
+      areTaxa: formState.areTaxa,
+      taxaAchitata: formState.areTaxa === true ? !!formState.taxaAchitata : null,
+      nota: els.fNota.value.trim(),
+      updatedAt: nowIso()
+    };
+
+    if(!db){ showBanner('Stocarea nu este disponibilă în această vizualizare — modificările nu se salvează.'); closeForm(); return; }
+
+    setSaveStatus('busy','se salvează…');
+    var p;
+    if(editingId){
+      p = docRef(editingId).update(data);
+    } else {
+      data.createdAt = nowIso();
+      p = db.collection('dosare').add(data);
+    }
+    p.then(function(){ setSaveStatus('ok','salvat'); closeForm(); })
+     .catch(function(e){ setSaveStatus('err','eroare la salvare'); console.error(e); });
+  });
+
+  els.btnDelete.addEventListener('click', function(){
+    if(!editingId) return;
+    var d = docs.find(function(x){ return x.id === editingId; });
+    closeForm();
+    if(d) openConfirmDelete(d);
+  });
+
+  // ---------- confirm delete ----------
+  function openConfirmDelete(d){
+    pendingDeleteId = d.id;
+    els.confirmName.textContent = d.nume;
+    els.confirmOverlay.classList.add('show');
+  }
+  function closeConfirm(){ els.confirmOverlay.classList.remove('show'); pendingDeleteId = null; }
+  els.confirmCancel.addEventListener('click', closeConfirm);
+  els.confirmOverlay.addEventListener('click', function(e){ if(e.target === els.confirmOverlay) closeConfirm(); });
+  els.confirmOk.addEventListener('click', function(){
+    if(!pendingDeleteId || !db){ closeConfirm(); return; }
+    var id = pendingDeleteId;
+    setSaveStatus('busy','se șterge…');
+    docRef(id).delete().then(function(){ setSaveStatus('ok','salvat'); }).catch(function(e){ setSaveStatus('err','eroare'); console.error(e); });
+    closeConfirm();
+  });
+
+  // ---------- filters ----------
+  els.search.addEventListener('input', renderTable);
+  els.filterLuna.addEventListener('change', renderTable);
+  els.filterStatus.addEventListener('change', renderTable);
+  els.sortBy.addEventListener('change', renderTable);
+
+  // ---------- statistici financiare pe lună (la cerere, nu în antet) ----------
+  function renderFinStats(){
+    var byLuna = {};
+    docs.forEach(function(d){
+      var key = d.lunaKey || '—';
+      if(!byLuna[key]) byLuna[key] = {label: d.luna || fmtLunaFromKey(key) || 'Fără lună', count:0, tarif:0, ramas:0};
+      byLuna[key].count++;
+      var t = parseNumericLoose(d.tarif); if(t!=null) byLuna[key].tarif += t;
+      var r = parseNumericLoose(d.sumaRamasa); if(r!=null) byLuna[key].ramas += r;
+    });
+    var keys = Object.keys(byLuna).sort().reverse();
+    if(keys.length === 0){
+      els.finStatsBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-faint); padding:20px;">Niciun dosar înregistrat încă.</td></tr>';
+      return;
+    }
+    var totalCount=0, totalTarif=0, totalRamas=0;
+    var rows = keys.map(function(k){
+      var m = byLuna[k];
+      totalCount += m.count; totalTarif += m.tarif; totalRamas += m.ramas;
+      return '<tr><td>'+escapeHtml(m.label)+'</td><td class="num">'+m.count+'</td>' +
+        '<td class="num">'+fmtMoney(m.tarif)+' lei</td><td class="num">'+fmtMoney(m.ramas)+' lei</td></tr>';
+    });
+    rows.push('<tr class="fin-total"><td>Total</td><td class="num">'+totalCount+'</td>' +
+      '<td class="num">'+fmtMoney(totalTarif)+' lei</td><td class="num">'+fmtMoney(totalRamas)+' lei</td></tr>');
+    els.finStatsBody.innerHTML = rows.join('');
+  }
+  els.btnFinStats.addEventListener('click', function(){ renderFinStats(); els.finStatsOverlay.classList.add('show'); });
+  els.finStatsClose.addEventListener('click', function(){ els.finStatsOverlay.classList.remove('show'); });
+  els.finStatsOverlay.addEventListener('click', function(e){ if(e.target === els.finStatsOverlay) els.finStatsOverlay.classList.remove('show'); });
+
+  // ---------- export csv ----------
+  function toCsvValue(v){
+    var s = v==null ? '' : String(v);
+    if(/[",;\n]/.test(s)) s = '"' + s.replace(/"/g,'""') + '"';
+    return s;
+  }
+  els.btnExport.addEventListener('click', function(){
+    var list = getFiltered();
+    var header = ['Firma','Nr. inregistrare','Luna','Incasat','Suma ramasa','Depus','Admis','Are taxa','Taxa achitata','Eliberat','Nota'];
+    var rows = list.map(function(d){
+      return [
+        d.nume, d.nrInregistrare, d.luna,
+        d.tarif!=null?d.tarif:'',
+        d.sumaRamasa!=null?d.sumaRamasa:(d.sumaRamasaText||''),
+        d.depus?'Da':'Nu',
+        d.admis?'Da':'Nu',
+        d.areTaxa===true?'Da':(d.areTaxa===false?'Nu':''),
+        d.areTaxa===true?(d.taxaAchitata?'Da':'Nu'):'',
+        d.eliberat?'Da':'Nu',
+        d.nota||''
+      ].map(toCsvValue).join(',');
+    });
+    var csv = '﻿' + header.join(',') + '\n' + rows.join('\n');
+    if(downloads){
+      downloads.save({filename:'dosare-orc.csv', data: csv}).catch(function(e){ console.error(e); });
+    } else {
+      showBanner('Exportul de fișiere nu este disponibil în această vizualizare.');
+    }
+  });
+
+  // ---------- backup complet (JSON) — copie de siguranță, separată de aplicație ----------
+  // Se poate salva local/în iCloud Drive și, la nevoie, restaura înapoi din butonul „Restaurează backup”.
+  els.btnBackupExport.addEventListener('click', function(){
+    var payload = {
+      exportatLa: nowIso(),
+      numarDosare: docs.length,
+      dosare: docs
+    };
+    var json = JSON.stringify(payload, null, 2);
+    var stamp = new Date().toISOString().slice(0,10);
+    if(downloads){
+      downloads.save({filename:'dosare-orc-backup-'+stamp+'.json', data: json}).catch(function(e){ console.error(e); });
+    } else {
+      showBanner('Exportul de fișiere nu este disponibil în această vizualizare.');
+    }
+  });
+
+  els.btnBackupImport.addEventListener('click', function(){ els.backupFileInput.click(); });
+  els.backupFileInput.addEventListener('change', function(){
+    var file = els.backupFileInput.files && els.backupFileInput.files[0];
+    els.backupFileInput.value = '';
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch(e){ showBanner('Fișierul de backup nu este un JSON valid.'); return; }
+      var list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed && parsed.dosare) ? parsed.dosare : null);
+      if(!list){ showBanner('Fișierul de backup nu are formatul așteptat.'); return; }
+      pendingImportList = list;
+      els.importPromptCount.textContent = list.length;
+      els.importPromptOverlay.classList.add('show');
+    };
+    reader.readAsText(file);
+  });
+  els.importPromptCancel.addEventListener('click', function(){ pendingImportList = null; els.importPromptOverlay.classList.remove('show'); });
+  els.importPromptOverlay.addEventListener('click', function(e){ if(e.target === els.importPromptOverlay){ pendingImportList = null; els.importPromptOverlay.classList.remove('show'); } });
+  els.importPromptOk.addEventListener('click', function(){
+    var list = pendingImportList;
+    els.importPromptOverlay.classList.remove('show');
+    pendingImportList = null;
+    if(!list) return;
+    if(!db){ showBanner('Stocarea nu este disponibilă în această vizualizare — nu se poate restaura.'); return; }
+    setSaveStatus('busy','se restaurează…');
+    var writes = list.filter(function(item){ return item && item.id; }).map(function(item){
+      var data = Object.assign({}, item);
+      delete data.id;
+      return db.collection('dosare').doc(item.id).set(data);
+    });
+    Promise.all(writes).then(function(){
+      setSaveStatus('ok','restaurat');
+    }).catch(function(e){
+      setSaveStatus('err','eroare la restaurare');
+      console.error(e);
+    });
+  });
+
+  // ================= Registrul Dizolvări =================
+
+  // ---------- toggle rămas/achitat integral ----------
+  function renderFormTogglesDizolvare(){
+    renderToggleGroup(els.fdAchitatRow, [
+      {value:false, label:'Mai are de achitat', onClass:'on-bad'},
+      {value:true, label:'Achitat integral', onClass:'on-good'}
+    ], formStateDizolvare.achitatIntegral, function(v){
+      formStateDizolvare.achitatIntegral = v;
+      renderFormTogglesDizolvare();
+    });
+    els.fdRamasField.style.display = formStateDizolvare.achitatIntegral ? 'none' : '';
+  }
+
+  // ---------- filtrare/sortare dizolvări ----------
+  function getFilteredDizolvari(){
+    var q = els.searchDizolvari.value.trim().toLowerCase();
+    var f = els.filterDizolvari.value;
+    var list = dizolvariDocs.filter(function(d){
+      if(q){
+        var hay = (d.nume||'').toLowerCase() + ' ' + (d.cui||'').toLowerCase();
+        if(hay.indexOf(q) === -1) return false;
+      }
+      if(f === 'active' && d.transferatInOrc) return false;
+      if(f === 'transferate' && !d.transferatInOrc) return false;
+      if(f === 'gata'){
+        if(d.transferatInOrc) return false;
+        var info = termenOpozitieInfo(d.dataPublicareMof);
+        if(!info || !info.expired) return false;
+      }
+      return true;
+    });
+    list.sort(function(a,b){ return (a.dataPublicareMof||'9999').localeCompare(b.dataPublicareMof||'9999'); });
+    return list;
+  }
+
+  // ---------- stats dizolvări ----------
+  function renderStatsDizolvari(list){
+    var active = 0, gataDeTransfer = 0, ramasTotal = 0;
+    dizolvariDocs.forEach(function(d){
+      if(d.transferatInOrc) return;
+      active++;
+      var info = termenOpozitieInfo(d.dataPublicareMof);
+      if(info && info.expired) gataDeTransfer++;
+      if(!d.achitatIntegral){
+        var r = parseNumericLoose(d.sumaRamasa);
+        if(r!=null) ramasTotal += r;
+      }
+    });
+    var tiles = [
+      {label:'Dizolvări active', value:active, cls:''},
+      {label:'Gata de transfer', value:gataDeTransfer, cls:'good'},
+      {label:'Rămas de încasat', value: fmtMoney(ramasTotal)+' lei', cls:''}
+    ];
+    els.statsDizolvari.innerHTML = tiles.map(function(t){
+      return '<div class="tile '+t.cls+'"><div class="label">'+escapeHtml(t.label)+'</div><div class="value">'+escapeHtml(String(t.value))+'</div></div>';
+    }).join('');
+  }
+
+  // ---------- tabel dizolvări ----------
+  function renderTableDizolvari(){
+    var list = getFilteredDizolvari();
+    renderStatsDizolvari(list);
+
+    if(list.length === 0){
+      els.tbodyDizolvari.innerHTML = '';
+      els.emptyStateDizolvari.style.display = 'block';
+      return;
+    }
+    els.emptyStateDizolvari.style.display = 'none';
+
+    els.tbodyDizolvari.innerHTML = list.map(function(d, idx){
+      var termenChip;
+      if(d.transferatInOrc){
+        termenChip = inlineChip('Transferat în ORC', 'on-archived');
+      } else {
+        var info = termenOpozitieInfo(d.dataPublicareMof);
+        if(!info) termenChip = inlineChip('?', 'dashed');
+        else if(info.expired) termenChip = inlineChip('Expirat ('+info.dataText+')', 'on-good');
+        else termenChip = inlineChip('până la '+info.dataText, 'on-gold');
+      }
+      var ramasDisplay = d.achitatIntegral
+        ? '<span class="chip on-good">Achitat integral</span>'
+        : escapeHtml(d.sumaRamasa!=null ? (fmtMoney(d.sumaRamasa)+' lei') : (d.sumaRamasaText || '—'));
+      var transferBtn = d.transferatInOrc
+        ? '<button class="icon-btn" disabled title="Deja transferat în ORC">→</button>'
+        : '<button class="icon-btn" data-act="transfer" title="Transferă în Registrul ORC">→</button>';
+
+      return '<tr data-id="'+d.id+'">' +
+        '<td class="num crt">'+(idx+1)+'</td>' +
+        '<td class="nume">'+escapeHtml(d.nume)+'</td>' +
+        '<td>'+escapeHtml(d.cui||'—')+'</td>' +
+        '<td>'+escapeHtml(fmtDateRo(d.dataPublicareMof)||'—')+'</td>' +
+        '<td>'+termenChip+'</td>' +
+        '<td class="num">'+ramasDisplay+'</td>' +
+        '<td class="nota" title="'+escapeHtml(d.nota||'')+'">'+escapeHtml(d.nota||'')+'</td>' +
+        '<td><div class="row-actions">' +
+          transferBtn +
+          '<button class="icon-btn" data-act="edit" title="Editează">✎</button>' +
+          '<button class="icon-btn danger" data-act="del" title="Șterge">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  els.tbodyDizolvari.addEventListener('click', function(e){
+    var tr = e.target.closest('tr[data-id]');
+    if(!tr) return;
+    var id = tr.getAttribute('data-id');
+    var d = dizolvariDocs.find(function(x){ return x.id === id; });
+    if(!d) return;
+    var actBtn = e.target.closest('[data-act]');
+    if(!actBtn || actBtn.disabled) return;
+    if(actBtn.dataset.act === 'edit') openEditDizolvare(d);
+    if(actBtn.dataset.act === 'del') openConfirmDeleteDizolvare(d);
+    if(actBtn.dataset.act === 'transfer') openTransferConfirm(d);
+  });
+
+  // ---------- db writes — dizolvări ----------
+  function docRefDizolvare(id){ return db.collection('dizolvari').doc(id); }
+
+  // ---------- add/edit modal — dizolvări ----------
+  function openAddDizolvare(){
+    editingDizolvareId = null;
+    els.formDizolvareTitle.textContent = 'Dizolvare nouă';
+    els.btnDeleteDizolvare.style.display = 'none';
+    els.fdNume.value = '';
+    els.fdCui.value = '';
+    els.fdDataMof.value = '';
+    els.fdRamas.value = '';
+    els.fdNota.value = '';
+    formStateDizolvare = { achitatIntegral:false };
+    renderFormTogglesDizolvare();
+    els.formDizolvareOverlay.classList.add('show');
+    els.fdNume.focus();
+  }
+
+  function openEditDizolvare(d){
+    editingDizolvareId = d.id;
+    els.formDizolvareTitle.textContent = 'Editează dizolvarea';
+    els.btnDeleteDizolvare.style.display = '';
+    els.fdNume.value = d.nume || '';
+    els.fdCui.value = d.cui || '';
+    els.fdDataMof.value = d.dataPublicareMof || '';
+    els.fdRamas.value = d.sumaRamasa != null ? d.sumaRamasa : (d.sumaRamasaText || '');
+    els.fdNota.value = d.nota || '';
+    formStateDizolvare = { achitatIntegral: !!d.achitatIntegral };
+    renderFormTogglesDizolvare();
+    els.formDizolvareOverlay.classList.add('show');
+    els.fdNume.focus();
+  }
+
+  function closeFormDizolvare(){ els.formDizolvareOverlay.classList.remove('show'); }
+
+  els.btnAddDizolvare.addEventListener('click', openAddDizolvare);
+  els.btnCancelDizolvare.addEventListener('click', closeFormDizolvare);
+  els.formDizolvareOverlay.addEventListener('click', function(e){ if(e.target === els.formDizolvareOverlay) closeFormDizolvare(); });
+
+  els.btnSaveDizolvare.addEventListener('click', function(){
+    var nume = els.fdNume.value.trim();
+    if(!nume){ els.fdNume.focus(); return; }
+    var ramasRaw = els.fdRamas.value.trim();
+    var ramasNum = ramasRaw === '' ? null : parseNumericLoose(ramasRaw);
+    var ramasIsPureNumber = ramasRaw !== '' && /^-?\d+([.,]\d+)?$/.test(ramasRaw);
+
+    var data = {
+      nume: nume,
+      cui: els.fdCui.value.trim(),
+      dataPublicareMof: els.fdDataMof.value || null,
+      achitatIntegral: !!formStateDizolvare.achitatIntegral,
+      sumaRamasa: (!formStateDizolvare.achitatIntegral && ramasIsPureNumber) ? ramasNum : null,
+      sumaRamasaText: (!formStateDizolvare.achitatIntegral && !ramasIsPureNumber) ? (ramasRaw || null) : null,
+      nota: els.fdNota.value.trim(),
+      updatedAt: nowIso()
+    };
+
+    if(!db){ showBanner('Stocarea nu este disponibilă în această vizualizare — modificările nu se salvează.'); closeFormDizolvare(); return; }
+
+    setSaveStatus('busy','se salvează…');
+    var p;
+    if(editingDizolvareId){
+      p = docRefDizolvare(editingDizolvareId).update(data);
+    } else {
+      data.transferatInOrc = false;
+      data.transferedOrcId = null;
+      data.transferedAt = null;
+      data.createdAt = nowIso();
+      p = db.collection('dizolvari').add(data);
+    }
+    p.then(function(){ setSaveStatus('ok','salvat'); closeFormDizolvare(); })
+     .catch(function(e){ setSaveStatus('err','eroare la salvare'); console.error(e); });
+  });
+
+  els.btnDeleteDizolvare.addEventListener('click', function(){
+    if(!editingDizolvareId) return;
+    var d = dizolvariDocs.find(function(x){ return x.id === editingDizolvareId; });
+    closeFormDizolvare();
+    if(d) openConfirmDeleteDizolvare(d);
+  });
+
+  // ---------- confirm delete — dizolvări ----------
+  function openConfirmDeleteDizolvare(d){
+    pendingDeleteDizolvareId = d.id;
+    els.confirmDizolvareName.textContent = d.nume;
+    els.confirmDizolvareOverlay.classList.add('show');
+  }
+  function closeConfirmDizolvare(){ els.confirmDizolvareOverlay.classList.remove('show'); pendingDeleteDizolvareId = null; }
+  els.confirmDizolvareCancel.addEventListener('click', closeConfirmDizolvare);
+  els.confirmDizolvareOverlay.addEventListener('click', function(e){ if(e.target === els.confirmDizolvareOverlay) closeConfirmDizolvare(); });
+  els.confirmDizolvareOk.addEventListener('click', function(){
+    if(!pendingDeleteDizolvareId || !db){ closeConfirmDizolvare(); return; }
+    var id = pendingDeleteDizolvareId;
+    setSaveStatus('busy','se șterge…');
+    docRefDizolvare(id).delete().then(function(){ setSaveStatus('ok','salvat'); }).catch(function(e){ setSaveStatus('err','eroare'); console.error(e); });
+    closeConfirmDizolvare();
+  });
+
+  // ---------- transfer în Registrul ORC ----------
+  // Dizolvarea rămâne în acest registru (istoric), doar marcată drept transferată — nu se
+  // șterge și nu se mută. Dosarul nou din ORC pornește doar cu firma precompletată; restul
+  // (nr. de înregistrare, tarif etc.) se completează manual, când sunt cunoscute.
+  function openTransferConfirm(d){
+    pendingTransferId = d.id;
+    els.transferName.textContent = d.nume;
+    els.transferOverlay.classList.add('show');
+  }
+  function closeTransferConfirm(){ els.transferOverlay.classList.remove('show'); pendingTransferId = null; }
+  els.transferCancel.addEventListener('click', closeTransferConfirm);
+  els.transferOverlay.addEventListener('click', function(e){ if(e.target === els.transferOverlay) closeTransferConfirm(); });
+  els.transferOk.addEventListener('click', function(){
+    var id = pendingTransferId;
+    closeTransferConfirm();
+    if(!id || !db) return;
+    var d = dizolvariDocs.find(function(x){ return x.id === id; });
+    if(!d) return;
+    setSaveStatus('busy','se transferă…');
+    var now = new Date();
+    var lunaKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    var newData = {
+      nume: d.nume,
+      nrInregistrare: '',
+      lunaKey: lunaKey,
+      luna: fmtLunaFromKey(lunaKey),
+      tarif: null,
+      sumaRamasa: null,
+      sumaRamasaText: null,
+      admis: false,
+      depus: false,
+      eliberat: false,
+      areTaxa: null,
+      taxaAchitata: null,
+      nota: 'Transferat din Registrul Dizolvări' + (d.nota ? (' — ' + d.nota) : ''),
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+    db.collection('dosare').add(newData).then(function(ref){
+      return docRefDizolvare(id).update({transferatInOrc:true, transferedOrcId: ref.id, transferedAt: nowIso(), updatedAt: nowIso()});
+    }).then(function(){
+      setSaveStatus('ok','transferat în ORC');
+      switchTab('orc');
+    }).catch(function(e){
+      setSaveStatus('err','eroare la transfer');
+      console.error(e);
+    });
+  });
+
+  // ---------- filtre dizolvări ----------
+  els.searchDizolvari.addEventListener('input', renderTableDizolvari);
+  els.filterDizolvari.addEventListener('change', renderTableDizolvari);
+
+  function subscribeDizolvari(){
+    db.collection('dizolvari').limit(1000).onSnapshot(function(snap){
+      dizolvariDocs = snap.docs.map(function(s){ return Object.assign({id:s.id}, s.data()); });
+      renderTableDizolvari();
+    }, function(err){
+      console.error(err);
+    });
+  }
+
+  // ================= Date inițiale (seed) — 186 dosare ORC + 17 dizolvări, la data
+  // exportului acestei versiuni locale. Se folosesc o singură dată, la prima
+  // deschidere pe acest dispozitiv/browser — modificările ulterioare rămân locale.
+  var SEED_DATA = {"dosare": [{"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2905285", "nume": "Real instant service", "sumaRamasa": 758, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0001"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2905610", "nume": "Felix dent", "sumaRamasa": 758, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0002"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2906132", "nume": "Ai prestige group s.r.l.", "sumaRamasa": 735, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0003"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2906365", "nume": "Imd accs", "sumaRamasa": 682, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0004"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2923296", "nume": "Mihaela make up", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0005"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2930242", "nume": "Dossara", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0006"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2934213", "nume": "Vancea tarquinia anca PFA", "sumaRamasa": 440, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0007"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2935005", "nume": "Color grup", "sumaRamasa": 658, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0008"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2953266", "nume": "Sknm", "sumaRamasa": 500, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0009"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2953551", "nume": "Boier capital s.r.l.", "sumaRamasa": 748, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0010"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2955472", "nume": "Reealex", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0011"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2958116", "nume": "Popestate", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0012"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2958245", "nume": "Amilad transport", "sumaRamasa": 532, "sumaRamasaText": null, "tarif": 800, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0013"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2958352", "nume": "Boieriu spedition", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0014"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2958502", "nume": "Transilvania multitasking", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0015"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2958513", "nume": "Westcom ltd", "sumaRamasa": 682, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0016"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2975617", "nume": "Andcris cont expert", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0017"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2976734", "nume": "Micros electric", "sumaRamasa": 612, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0018"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2976862", "nume": "Zadarov ioana-teodora PFA", "sumaRamasa": 190, "sumaRamasaText": null, "tarif": 200, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0019"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2976929", "nume": "Autocom", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0020"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2976992", "nume": "Vicsto industries", "sumaRamasa": 788, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0021"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2977277", "nume": "Inter bt group", "sumaRamasa": 588, "sumaRamasaText": null, "tarif": 750, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0022"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2977373", "nume": "Levolt", "sumaRamasa": 390, "sumaRamasaText": null, "tarif": 400, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0023"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2977379", "nume": "Romra bet caffe", "sumaRamasa": 588, "sumaRamasaText": null, "tarif": 750, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0024"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2977641", "nume": "Studio boeriu & simina", "sumaRamasa": 712, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0025"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2977795", "nume": "Proeval", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0026"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2983228", "nume": "Badata Cuantum", "sumaRamasa": 668, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0027"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2989614", "nume": "AIA Cont Expert SRL", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0028"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2993935", "nume": "Jasild pro construct", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0029"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2994137", "nume": "Manex acte auto", "sumaRamasa": 308, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0030"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2994227", "nume": "Tubosi med", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0031"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2983444", "nume": "Rural media haus", "sumaRamasa": 668, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0032"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3011402", "nume": "Dentador Smile", "sumaRamasa": 668, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0033"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3018289", "nume": "Campian I. Marius PFA", "sumaRamasa": 270, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0034"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2995663", "nume": "Sipos M. Razvan IF", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0035"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2995947", "nume": "Andrea Forest", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0036"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3034939", "nume": "Tekarom", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0037"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "2958142", "nume": "Hungant business", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0038"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3047249", "nume": "Oachis Agnes IF", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0039"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3043899", "nume": "Bacisor Marius Iulian IF", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0040"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3045587", "nume": "Sechel Ioan Radu IF", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0041"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3045588", "nume": "Chis Bogdan Alexandru IF", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0042"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3045749", "nume": "Rdtrade", "sumaRamasa": 808, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0043"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3045903", "nume": "Limousine SRL", "sumaRamasa": 682, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0044"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3045947", "nume": "Unique Cake Delice", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0045"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3046062", "nume": "Vara lu’ 93 SRL", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0046"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3047112", "nume": "Forsa SVA SRL", "sumaRamasa": 758, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0047"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3024734", "nume": "VIS Medical", "sumaRamasa": 768, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0048"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3047330", "nume": "Silvagra", "sumaRamasa": 312, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0049"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3048915", "nume": "Barberhoood Carlos", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0050"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3049225", "nume": "SIA Consulting", "sumaRamasa": 308, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0051"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3062701", "nume": "Centru de formare profesională Cristesti", "sumaRamasa": 662, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0052"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "Iulie 2026", "lunaKey": "2026-07", "nota": "", "nrInregistrare": "3065674", "nume": "Sighișoara Software", "sumaRamasa": 668, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0053"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3065212", "nume": "Funerar Eternum", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:59:00.093Z", "id": "seed-0054"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3078707", "nume": "Acm Atm", "sumaRamasa": 818, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0055"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3081250", "nume": "Sun Best Delivery Services", "sumaRamasa": 848, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0056"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3083410", "nume": "M&D Electro", "sumaRamasa": 692, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0057"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3085298", "nume": "Forest Camp Transylvania", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0058"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3085691", "nume": "Suciu S. Cristina", "sumaRamasa": 290, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0059"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3085763", "nume": "Butunoi Theodor-Sergiu", "sumaRamasa": 260, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0060"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3085912", "nume": "Costea I. Ioan-Teofil", "sumaRamasa": 260, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0061"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3085982", "nume": "Stan F. Alexandru-Florin PFA", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0062"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3097898", "nume": "Trinis", "sumaRamasa": 848, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0063"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3103588", "nume": "Kovacs Kobot", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0064"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3103733", "nume": "Clau Drive VLL", "sumaRamasa": 788, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0065"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3107243", "nume": "Top Smart Invest", "sumaRamasa": 818, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0066"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3107865", "nume": "Smart Delivery Services", "sumaRamasa": 818, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0067"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3108352", "nume": "TTG-Group", "sumaRamasa": 848, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0068"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3108483", "nume": "Timetogo", "sumaRamasa": 848, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0069"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3111058", "nume": "AT Design", "sumaRamasa": 668, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0070"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3118839", "nume": "K-Deliris", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0071"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3119084", "nume": "BNN Boianu", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0072"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3119195", "nume": "Saifamim Prod", "sumaRamasa": 722, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0073"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3119368", "nume": "Lec motors", "sumaRamasa": 658, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0074"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3120228", "nume": "Confort Impex", "sumaRamasa": 722, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0075"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3121428", "nume": "Christian Delivery", "sumaRamasa": 848, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0076"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3120981", "nume": "Titi Com", "sumaRamasa": 758, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0077"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3085273", "nume": "Team Sky Media", "sumaRamasa": 632, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0078"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3128486", "nume": "Unity workforce SRL", "sumaRamasa": 748, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0079"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3128757", "nume": "Nexus staffing SRL", "sumaRamasa": 748, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0080"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3101539", "nume": "Autoselect Deda", "sumaRamasa": 668, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0081"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3084968", "nume": "Joule Tech Supply", "sumaRamasa": 862, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0082"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3128256", "nume": "Asociația Moldovan", "sumaRamasa": 722, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0083"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3128664", "nume": "Agro Mol Family", "sumaRamasa": 722, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0084"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3270275", "nume": "Titangas Holding SRL", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0085"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3144169", "nume": "MMB Transport", "sumaRamasa": 788, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0086"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3144624", "nume": "AX Evo Distribution", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0087"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3291993", "nume": "FLM Construct Mures", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0088"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3183518", "nume": "Saferom Smart", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0089"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3360263", "nume": "Partener Local", "sumaRamasa": 722, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T10:17:22.787Z", "id": "seed-0090"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3184831", "nume": "BE Commerce solutions", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0091"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3203474", "nume": "Farkas-Kovacs Timea", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0092"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3205854", "nume": "Nagy I. Peter PFA", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0093"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3205515", "nume": "Margandai Jozsef", "sumaRamasa": 410, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0094"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3205642", "nume": "La Citadella", "sumaRamasa": 912, "sumaRamasaText": null, "tarif": 1200, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0095"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3205848", "nume": "Citadella White Service", "sumaRamasa": 1018, "sumaRamasaText": null, "tarif": 1200, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0096"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3206293", "nume": "Citadella International Sports", "sumaRamasa": 1018, "sumaRamasaText": null, "tarif": 1200, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0097"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3227996", "nume": "Mammoth Stage", "sumaRamasa": 862, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0098"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3228112", "nume": "Black Jakob Seven", "sumaRamasa": null, "sumaRamasaText": "Neachitat", "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0099"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3241074", "nume": "Bodfar Construct", "sumaRamasa": 756, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0100"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3241804", "nume": "Coco select Garage", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0101"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3240565", "nume": "Pol Tamas Daniel", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0102"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3184470", "nume": "Dam Instruct Arm", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0103"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3241355", "nume": "Bodfar Construct Home", "sumaRamasa": 700, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0104"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3242240", "nume": "RSS Motorrad Garage", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0105"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3234222", "nume": "Vlad Vasile Cosmin I.I.", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0106"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3263147", "nume": "Innaexpress Cargo SRL", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0107"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3266230", "nume": "Ujfalvi Szilard", "sumaRamasa": 440, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0108"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3291804", "nume": "Florea Codruț", "sumaRamasa": 260, "sumaRamasaText": null, "tarif": 300, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0109"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3291816", "nume": "Peterlicean Magdalena", "sumaRamasa": -40, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0110"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3305134", "nume": "Inter Lucanto", "sumaRamasa": 668, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0111"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3307854", "nume": "K&Y Parts 4You SRL", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0112"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3307612", "nume": "Autavia Siffert", "sumaRamasa": 758, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0113"}, {"admis": true, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3313273", "nume": "Miracris Duo", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": true, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0114"}, {"admis": true, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": true, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3314449", "nume": "Comrildent", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0115"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "AMANAT", "nrInregistrare": "3313271", "nume": "Miracris Trans", "sumaRamasa": 798, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": false, "updatedAt": "2026-09-12T10:57:48.515Z", "id": "seed-0116"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3348933", "nume": "Imariflorea", "sumaRamasa": 414, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T09:41:05.278Z", "id": "seed-0117"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3350257", "nume": "Trans agroovinex", "sumaRamasa": 862, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": null, "updatedAt": "2026-09-12T09:41:08.279Z", "id": "seed-0118"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3349246", "nume": "Szabo-Fokt Csongor", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T09:41:07.132Z", "id": "seed-0119"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3348346", "nume": "Nagy K. Katalin", "sumaRamasa": 410, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T09:41:31.191Z", "id": "seed-0120"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3349115", "nume": "Autowelt KTR", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": null, "updatedAt": "2026-09-12T09:41:06.249Z", "id": "seed-0121"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3399970", "nume": "K-Fla Unik", "sumaRamasa": 214, "sumaRamasaText": null, "tarif": 300, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:21.944Z", "id": "seed-0122"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3413260", "nume": "Alisana Clean Agriculture SRL", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:37.818Z", "id": "seed-0123"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "BRASOV", "nrInregistrare": "3413852", "nume": "Zobava Prod SRL", "sumaRamasa": 682, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:39.014Z", "id": "seed-0124"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3411734", "nume": "Iacob property management", "sumaRamasa": 698, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:23.327Z", "id": "seed-0125"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3399619", "nume": "Ely Beauty Room SRL", "sumaRamasa": 658, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:19.702Z", "id": "seed-0126"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "Factura LEX", "nrInregistrare": "3412269", "nume": "Professional Silence Security Guard", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:29.232Z", "id": "seed-0127"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3412860", "nume": "Micros Electric", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:32.111Z", "id": "seed-0128"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3439676", "nume": "Topi Agro Invest", "sumaRamasa": 658, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:41.039Z", "id": "seed-0129"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "Factura LEX", "nrInregistrare": "3479243", "nume": "Language Center Mures", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:43.306Z", "id": "seed-0130"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3502132", "nume": "Kriszzolan", "sumaRamasa": 788, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:44.307Z", "id": "seed-0131"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3553752", "nume": "ZTB", "sumaRamasa": 1414, "sumaRamasaText": null, "tarif": 1500, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:46.711Z", "id": "seed-0132"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "August 2026", "lunaKey": "2026-08", "nota": "", "nrInregistrare": "3553547", "nume": "Konzol", "sumaRamasa": 1234, "sumaRamasaText": null, "tarif": 1350, "taxaAchitata": null, "updatedAt": "2026-09-12T09:40:45.758Z", "id": "seed-0133"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "ILFOV", "nrInregistrare": "3502526", "nume": "Unity workforce", "sumaRamasa": 872, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:07.617Z", "id": "seed-0134"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3507883", "nume": "Ronyx Online SRL", "sumaRamasa": 748, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:11.723Z", "id": "seed-0135"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3569642", "nume": "Transilvania Fashion Store", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:14.177Z", "id": "seed-0136"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "3602173", "nume": "Edepres Comimpex", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:15.620Z", "id": "seed-0137"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3605019", "nume": "Maghear Silvia", "sumaRamasa": 370, "sumaRamasaText": null, "tarif": 400, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0138"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3610137", "nume": "Citadin Prest SA", "sumaRamasa": 348, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:19.095Z", "id": "seed-0139"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3653913", "nume": "Monamol Contexpert", "sumaRamasa": 448, "sumaRamasaText": null, "tarif": 600, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:21.347Z", "id": "seed-0140"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "3656378", "nume": "Foraje Mureș", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:22.693Z", "id": "seed-0141"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "3658055", "nume": "Welding EM Consulting", "sumaRamasa": 748, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:24.167Z", "id": "seed-0142"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3667212", "nume": "Ernest Eurotrans", "sumaRamasa": 1414, "sumaRamasaText": null, "tarif": 1500, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:25.331Z", "id": "seed-0143"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3667227", "nume": "LPF Utilaje Construct", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:26.851Z", "id": "seed-0144"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3667262", "nume": "Lilith - Prăvălie pentru toți SRL", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:28.797Z", "id": "seed-0145"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3667289", "nume": "Călător in evul mediu", "sumaRamasa": 558, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:30.139Z", "id": "seed-0146"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "3667399", "nume": "Propc", "sumaRamasa": 608, "sumaRamasaText": null, "tarif": 800, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:31.434Z", "id": "seed-0147"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "3667839", "nume": "Digital pro", "sumaRamasa": 608, "sumaRamasaText": null, "tarif": 800, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:33.330Z", "id": "seed-0148"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "3675986", "nume": "Badimol Com", "sumaRamasa": 718, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:37.618Z", "id": "seed-0149"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3683184", "nume": "CPM Invest", "sumaRamasa": 768, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T10:09:16.270Z", "id": "seed-0150"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "3682398", "nume": "CPM Solutions", "sumaRamasa": 842, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:39.004Z", "id": "seed-0151"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Orive Salvis SRL", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": false, "updatedAt": "2026-09-12T10:09:57.160Z", "id": "seed-0152"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Lumo Floors MCV", "sumaRamasa": 410, "sumaRamasaText": null, "tarif": 450, "taxaAchitata": null, "updatedAt": "2026-09-12T09:00:34.038Z", "id": "seed-0153"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Borex Directional Drilling SRL", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:43:53.288Z", "id": "seed-0154"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Alpix Visual Studio", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:02.105Z", "id": "seed-0155"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Demzse Nimrod", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0156"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Eve Alice Mures", "sumaRamasa": null, "sumaRamasaText": "938 - 30", "tarif": 1100, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:04.013Z", "id": "seed-0157"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Adena Trans", "sumaRamasa": 832, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:06.375Z", "id": "seed-0158"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Hunor Matei Hair Concept", "sumaRamasa": 260, "sumaRamasaText": null, "tarif": 300, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0159"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Davids Consulting", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:08.095Z", "id": "seed-0160"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Budai Medical Solutions", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:09.433Z", "id": "seed-0161"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Pur-Herbet", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:10.489Z", "id": "seed-0162"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Persoana fizica", "nrInregistrare": "", "nume": "Allborexim Trade", "sumaRamasa": 712, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:11.621Z", "id": "seed-0163"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Brigi Heni Trans", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:12.815Z", "id": "seed-0164"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Persoana fizica", "nrInregistrare": "", "nume": "DIV Domcez", "sumaRamasa": 838, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:14.928Z", "id": "seed-0165"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "SI Mydent care", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:16.044Z", "id": "seed-0166"}, {"admis": false, "areTaxa": true, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Topcarsmures", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T09:44:17.178Z", "id": "seed-0167"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": true, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Veres L.C.M. Adrienn PFA", "sumaRamasa": 470, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T10:13:49.814Z", "id": "seed-0168"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": false, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Dombi Aneta Cristina", "sumaRamasa": 460, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T10:13:52.960Z", "id": "seed-0169"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "depus": false, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "AIA Cont Expert", "sumaRamasa": null, "sumaRamasaText": null, "tarif": null, "taxaAchitata": null, "updatedAt": "2026-09-12T10:13:15.468Z", "id": "seed-0170"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Golden Moon", "sumaRamasa": 842, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0171"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Vivo", "sumaRamasa": 842, "sumaRamasaText": null, "tarif": 1100, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0172"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "International battery distribution", "sumaRamasa": 688, "sumaRamasaText": null, "tarif": 850, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0173"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Zebra future tech", "sumaRamasa": 588, "sumaRamasaText": null, "tarif": 750, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0174"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Sandbox Joy", "sumaRamasa": 588, "sumaRamasaText": null, "tarif": 750, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0175"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Silzor Narcisa", "sumaRamasa": 682, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0176"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Salonul Zen beauty", "sumaRamasa": 490, "sumaRamasaText": null, "tarif": 500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0177"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "GC Techserv", "sumaRamasa": 788, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0178"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "HDD Drill Solutions", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0179"}, {"admis": false, "areTaxa": false, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Vacarusi Mioara Petruta", "sumaRamasa": 370, "sumaRamasaText": null, "tarif": 400, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0180"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Admil Spedition", "sumaRamasa": 818, "sumaRamasaText": null, "tarif": 1000, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0181"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "Factura VLAD", "nrInregistrare": "", "nume": "Davorion Logistics", "sumaRamasa": 758, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0182"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Davoria Services", "sumaRamasa": 708, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0183"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Nemet special construct", "sumaRamasa": 758, "sumaRamasaText": null, "tarif": 950, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0184"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T08:53:00.648981Z", "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Hiapsno rom", "sumaRamasa": 1414, "sumaRamasaText": null, "tarif": 1500, "taxaAchitata": null, "updatedAt": "2026-09-12T08:53:00.648981Z", "id": "seed-0185"}, {"admis": false, "areTaxa": null, "createdAt": "2026-09-12T09:56:14.250Z", "depus": false, "eliberat": false, "luna": "Septembrie 2026", "lunaKey": "2026-09", "nota": "", "nrInregistrare": "", "nume": "Annas media SRL", "sumaRamasa": 738, "sumaRamasaText": null, "tarif": 900, "taxaAchitata": null, "updatedAt": "2026-09-12T10:45:28.980Z", "id": "vihu0hv8d7761jpm6nc8"}], "dizolvari": [{"achitatIntegral": true, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "", "dataPublicareMof": "2025-04-24", "nota": "OPOZITIE", "nume": "Bautechnik know how", "sumaRamasa": null, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T11:14:19.068Z", "id": "dz11428994812xrj"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "", "dataPublicareMof": "2025-11-14", "nota": "", "nume": "Bavarsis team Romania", "sumaRamasa": 400, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T11:12:38.635Z", "id": "dz11428995y3jlvp"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "48778113", "dataPublicareMof": "2026-01-29", "nota": "150 martina", "nume": "GDSG", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T11:12:29.433Z", "id": "dz114289964r5o7u"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "43864817", "dataPublicareMof": "2026-01-30", "nota": "", "nume": "Santemed Cardio", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11428997wv3kyi"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "49252256", "dataPublicareMof": "2026-02-04", "nota": "", "nume": "Milkfarm", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11428998cinxhm"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "21659390", "dataPublicareMof": "2026-05-18", "nota": "", "nume": "El Dras", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429000m7kr37"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "46315279", "dataPublicareMof": "2026-07-09", "nota": "", "nume": "Dezmembrări Auto Pascu", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429001p9vvcg"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "26226720", "dataPublicareMof": "2026-07-09", "nota": "", "nume": "X Creator", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429002j9ucfk"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "32193627", "dataPublicareMof": "2026-07-15", "nota": "de pe Eleven", "nume": "PFC Exclusive Media", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429003rhq1wm"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "33386430", "dataPublicareMof": "2026-08-07", "nota": "", "nume": "Salonul Zen Beauty SRL-D", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429004kqv75h"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "28004770", "dataPublicareMof": null, "nota": "", "nume": "No Face", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429005qndgvs"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "29964543", "dataPublicareMof": null, "nota": "", "nume": "Redline Tex", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429006acnf6x"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "35501993", "dataPublicareMof": null, "nota": "", "nume": "Imariflorea", "sumaRamasa": 500, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429007ozfsgh"}, {"achitatIntegral": false, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "", "dataPublicareMof": null, "nota": "", "nume": "K-Fla Unik", "sumaRamasa": 300, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429009m80vbb"}, {"achitatIntegral": true, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "", "dataPublicareMof": null, "nota": "", "nume": "Konzol", "sumaRamasa": null, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429010p3p9eb"}, {"achitatIntegral": true, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "", "dataPublicareMof": null, "nota": "", "nume": "ZTB", "sumaRamasa": null, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz11429011t3crck"}, {"achitatIntegral": true, "createdAt": "2026-09-12T09:00:00.000Z", "cui": "", "dataPublicareMof": null, "nota": "", "nume": "Ernest Eurotrans", "sumaRamasa": null, "sumaRamasaText": null, "transferatInOrc": false, "transferedAt": null, "transferedOrcId": null, "updatedAt": "2026-09-12T09:00:00.000Z", "id": "dz114290122fmmml"}]};
+
+  // ================= Stocare în Google Drive (contul personal al Dianei) =================
+  // Datele nu mai stau în acest fișier și nici doar în acest browser — se citesc/scriu
+  // automat într-un fișier JSON din Google Drive-ul contului conectat, la fiecare
+  // deschidere și după fiecare modificare. Așa arată la fel pe orice dispozitiv/browser
+  // unde te conectezi cu același cont Google. Istoricul versiunilor acelui fișier (util
+  // ca să revii la o zi anterioară) e ținut automat de Google Drive — vezi „Gestionează
+  // versiunile" / „Istoric versiuni" pe fișierul „registru-orc-date.json" din Drive.
+  //
+  // IMPORTANT: funcționează doar când pagina e servită de la o adresă https:// autorizată
+  // în Google Cloud Console (nu ca fișier local deschis cu dublu-click) — e o regulă a
+  // Google, nu ceva ce putem ocoli din cod.
+  var DRIVE_CLIENT_ID = '506957598271-djd5c385gun8098s4ppk6lsj6hnlghor.apps.googleusercontent.com';
+  var DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  var DRIVE_FILE_NAME = 'registru-orc-date.json';
+
+  var driveTokenClient = null;
+  var driveAccessToken = null;
+  var driveTokenExpiresAt = 0;
+  var driveFileId = null;
+  var driveData = { dosare: {}, dizolvari: {} }; // în memorie — sursa de adevăr pe durata sesiunii
+  var driveSaveTimer = null;
+  var DRIVE_SAVE_DEBOUNCE_MS = 1000;
+
+  function driveUid(){ return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+  // ---------- colecții în memorie, cu aceeași formă (doc/add/limit/onSnapshot) ca peste tot în aplicație ----------
+  var driveListeners = { dosare: [], dizolvari: [] };
+  function driveNotify(name){
+    var map = driveData[name] || {};
+    var snap = { docs: Object.keys(map).map(function(id){
+      return { id: id, data: function(){ return map[id]; } };
+    }) };
+    (driveListeners[name] || []).forEach(function(l){ l.next(snap); });
+  }
+  function scheduleDriveSave(){
+    setSaveStatus('busy','se salvează în Drive…');
+    if(driveSaveTimer) clearTimeout(driveSaveTimer);
+    driveSaveTimer = setTimeout(function(){
+      driveSaveTimer = null;
+      driveSaveFileContent().then(function(){
+        setSaveStatus('ok','sincronizat cu Drive');
+      }).catch(function(e){
+        console.error(e);
+        setSaveStatus('err','eroare la salvare în Drive');
+        showBanner('Nu s-a putut salva în Google Drive: ' + (e && e.message ? e.message : 'eroare necunoscută') + '. Verifică backup-ul local ca variantă de siguranță.');
+      });
+    }, DRIVE_SAVE_DEBOUNCE_MS);
+  }
+
+  function makeDriveCollection(name){
+    var collection = {
+      doc: function(id){
+        return {
+          id: id,
+          update: function(patch){
+            return new Promise(function(resolve, reject){
+              var map = driveData[name];
+              if(!map[id]){ reject(new Error('Documentul nu există')); return; }
+              map[id] = Object.assign({}, map[id], patch);
+              driveNotify(name);
+              scheduleDriveSave();
+              resolve();
+            });
+          },
+          set: function(data){
+            return new Promise(function(resolve){
+              driveData[name][id] = Object.assign({}, data);
+              driveNotify(name);
+              scheduleDriveSave();
+              resolve();
+            });
+          },
+          delete: function(){
+            return new Promise(function(resolve){
+              delete driveData[name][id];
+              driveNotify(name);
+              scheduleDriveSave();
+              resolve();
+            });
+          }
+        };
+      },
+      add: function(data){
+        return new Promise(function(resolve){
+          var id = driveUid();
+          driveData[name][id] = Object.assign({}, data);
+          driveNotify(name);
+          scheduleDriveSave();
+          resolve({id: id});
+        });
+      },
+      limit: function(){ return collection; },
+      onSnapshot: function(next, error){
+        var l = {next: next, error: error};
+        driveListeners[name].push(l);
+        driveNotify(name);
+        return function unsubscribe(){
+          var idx = driveListeners[name].indexOf(l);
+          if(idx !== -1) driveListeners[name].splice(idx, 1);
+        };
+      }
+    };
+    return collection;
+  }
+
+  function makeDriveDb(){
+    var cache = {};
+    return {
+      collection: function(name){
+        if(!cache[name]) cache[name] = makeDriveCollection(name);
+        return cache[name];
+      }
+    };
+  }
+
+  function makeBlobDownloads(){
+    return {
+      save: function(opts){
+        return new Promise(function(resolve){
+          var blob = new Blob([opts.data], {type: 'text/plain;charset=utf-8'});
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = opts.filename || 'export.txt';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+          resolve();
+        });
+      }
+    };
+  }
+
+  // ---------- autentificare Google ----------
+  function ensureFreshDriveToken(){
+    var msLeft = driveTokenExpiresAt - Date.now();
+    if(driveAccessToken && msLeft > 60000) return Promise.resolve(driveAccessToken);
+    return new Promise(function(resolve, reject){
+      if(!driveTokenClient){ reject(new Error('Google Identity Services nu s-a încărcat.')); return; }
+      driveTokenClient.callback = function(resp){
+        if(resp && resp.error){ reject(new Error(resp.error)); return; }
+        driveAccessToken = resp.access_token;
+        driveTokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) * 1000);
+        resolve(driveAccessToken);
+      };
+      driveTokenClient.requestAccessToken({prompt: ''});
+    });
+  }
+
+  function driveApiFetch(url, options){
+    options = options || {};
+    return ensureFreshDriveToken().then(function(token){
+      options.headers = Object.assign({}, options.headers, {Authorization: 'Bearer ' + token});
+      return fetch(url, options);
+    });
+  }
+
+  // ---------- fișierul din Drive ----------
+  function driveFindFile(){
+    var q = encodeURIComponent("name='" + DRIVE_FILE_NAME + "' and trashed=false");
+    return driveApiFetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&spaces=drive&fields=files(id,name,modifiedTime)')
+      .then(function(r){ return r.json(); })
+      .then(function(json){ return (json.files && json.files[0]) || null; });
+  }
+
+  function driveReadFileContent(fileId){
+    return driveApiFetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media')
+      .then(function(r){
+        if(!r.ok) throw new Error('Nu s-a putut citi fișierul din Drive (' + r.status + ')');
+        return r.json();
+      });
+  }
+
+  function driveCreateFileWithContent(content){
+    var boundary = 'orcregdrive' + Date.now();
+    var metadata = {name: DRIVE_FILE_NAME, mimeType: 'application/json'};
+    var body =
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) + '\r\n' +
+      '--' + boundary + '\r\n' +
+      'Content-Type: application/json\r\n\r\n' +
+      JSON.stringify(content) + '\r\n' +
+      '--' + boundary + '--';
+    return driveApiFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {'Content-Type': 'multipart/related; boundary=' + boundary},
+      body: body
+    }).then(function(r){
+      if(!r.ok) throw new Error('Nu s-a putut crea fișierul în Drive (' + r.status + ')');
+      return r.json();
+    });
+  }
+
+  function driveSaveFileContent(){
+    if(!driveFileId) return Promise.reject(new Error('Fișierul din Drive nu este încă inițializat.'));
+    return driveApiFetch('https://www.googleapis.com/upload/drive/v3/files/' + driveFileId + '?uploadType=media', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(driveData)
+    }).then(function(r){
+      if(!r.ok) throw new Error('Salvarea în Drive a eșuat (' + r.status + ')');
+    });
+  }
+
+  // Convertește seed-ul embedat (liste cu câmpul id) în forma de hartă {id: date} folosită intern.
+  function seedArraysToMaps(seed){
+    var out = { dosare: {}, dizolvari: {} };
+    (seed.dosare || []).forEach(function(rec){
+      var copy = Object.assign({}, rec); var id = copy.id; delete copy.id;
+      out.dosare[id] = copy;
+    });
+    (seed.dizolvari || []).forEach(function(rec){
+      var copy = Object.assign({}, rec); var id = copy.id; delete copy.id;
+      out.dizolvari[id] = copy;
+    });
+    return out;
+  }
+
+  function afterDriveAuthenticated(){
+    els.driveConnectBar.hidden = true;
+    setSaveStatus('busy','se încarcă din Drive…');
+    driveFindFile().then(function(file){
+      if(file){
+        driveFileId = file.id;
+        return driveReadFileContent(driveFileId);
+      }
+      // Prima conectare vreodată — creăm fișierul, populat cu datele inițiale.
+      var initial = seedArraysToMaps(typeof SEED_DATA !== 'undefined' ? SEED_DATA : {});
+      return driveCreateFileWithContent(initial).then(function(created){
+        driveFileId = created.id;
+        return initial;
+      });
+    }).then(function(content){
+      driveData.dosare = (content && content.dosare) || {};
+      driveData.dizolvari = (content && content.dizolvari) || {};
+      driveNotify('dosare');
+      driveNotify('dizolvari');
+      setSaveStatus('ok','sincronizat cu Drive');
+    }).catch(function(e){
+      console.error(e);
+      setSaveStatus('err','eroare Drive');
+      showBanner('Nu s-au putut încărca datele din Google Drive: ' + (e && e.message ? e.message : 'eroare necunoscută') + '.');
+    });
+  }
+
+  function showDriveConnectBar(){
+    els.driveConnectBar.hidden = false;
+    setSaveStatus('err','neconectat la Drive');
+  }
+
+  els.btnDriveConnect.addEventListener('click', function(){
+    if(!driveTokenClient){ showBanner('Google Identity Services nu s-a încărcat — verifică conexiunea la internet și reîncarcă pagina.'); return; }
+    driveTokenClient.callback = function(resp){
+      if(resp && resp.error){ showDriveConnectBar(); return; }
+      driveAccessToken = resp.access_token;
+      driveTokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) * 1000);
+      afterDriveAuthenticated();
+    };
+    driveTokenClient.requestAccessToken({prompt: 'consent'});
+  });
+
+  // ---------- boot ----------
+  function subscribe(){
+    db.collection('dosare').limit(1000).onSnapshot(function(snap){
+      docs = snap.docs.map(function(s){ return Object.assign({id:s.id}, s.data()); });
+      renderTable();
+    });
+  }
+
+  function boot(){
+    renderFormToggles();
+    renderTable();
+    renderFormTogglesDizolvare();
+    renderTableDizolvari();
+
+    db = makeDriveDb();
+    downloads = makeBlobDownloads();
+    subscribe();
+    subscribeDizolvari();
+
+    function initGis(){
+      if(!(window.google && window.google.accounts && window.google.accounts.oauth2)){
+        setTimeout(initGis, 150);
+        return;
+      }
+      driveTokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: DRIVE_CLIENT_ID,
+        scope: DRIVE_SCOPE,
+        callback: function(){} // suprascris la fiecare cerere de token, mai jos
+      });
+      // Încercare silențioasă la deschidere — dacă a mai fost acordat accesul în acest
+      // browser și există o sesiune Google activă, se conectează fără niciun click.
+      driveTokenClient.callback = function(resp){
+        if(resp && resp.error){ showDriveConnectBar(); return; }
+        driveAccessToken = resp.access_token;
+        driveTokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) * 1000);
+        afterDriveAuthenticated();
+      };
+      driveTokenClient.requestAccessToken({prompt: ''});
+    }
+    initGis();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
