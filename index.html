@@ -137,9 +137,9 @@
   table{border-collapse:collapse; width:auto;}
   thead th{
     position:sticky; top:0; background:var(--surface-2); text-align:left; font-size:10.5px; text-transform:uppercase;
-    letter-spacing:.06em; color:var(--text-faint); font-weight:600; padding:7px 12px; border-bottom:1px solid var(--border); white-space:nowrap;
+    letter-spacing:.06em; color:var(--text-faint); font-weight:600; padding:7px 9px; border-bottom:1px solid var(--border); white-space:nowrap;
   }
-  tbody td{padding:5px 12px; border-bottom:1px solid var(--border); vertical-align:middle; font-size:14.5px; line-height:1.25;}
+  tbody td{padding:5px 9px; border-bottom:1px solid var(--border); vertical-align:middle; font-size:14.5px; line-height:1.25;}
   tbody tr:last-child td{border-bottom:none;}
   tbody tr:hover{background:var(--surface-2);}
   td.num, th.num{font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right;}
@@ -155,7 +155,7 @@
   }
   td.nume{font-weight:500; white-space:nowrap;}
   td.archived{color:var(--archived);}
-  td.nota{color:var(--note-text); max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  td.nota{color:var(--note-text); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   td.luna{color:var(--text-dim); white-space:nowrap;}
   .empty-state{padding:40px 20px; text-align:center; color:var(--text-faint); font-size:13px;}
 
@@ -566,6 +566,14 @@
     return LUNI_RO[m-1] + " " + y;
   }
 
+  // Format scurt (ex. "09.2026"), folosit în coloana tabelului ca să ocupe mai puțin loc pe orizontală.
+  function fmtLunaShort(key){
+    if(!key) return "";
+    var parts = key.split("-");
+    if(parts.length !== 2) return key;
+    return parts[1] + "." + parts[0];
+  }
+
   function nowIso(){ return new Date().toISOString(); }
 
   function uid(){ return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -887,7 +895,7 @@
         '<td class="num">'+ (d.cheltuieli!=null ? fmtMoney(d.cheltuieli) : '—') +'</td>' +
         '<td class="num">'+ escapeHtml(ramasDisplay) +'</td>' +
         '<td data-role="cui" title="'+(d.cui?'Dublu-click pentru a copia CUI':'')+'">'+escapeHtml(d.cui||'—')+'</td>' +
-        '<td class="luna">'+escapeHtml(d.luna||fmtLunaFromKey(d.lunaKey))+'</td>' +
+        '<td class="luna" title="'+escapeHtml(d.luna||fmtLunaFromKey(d.lunaKey))+'">'+escapeHtml(d.lunaKey ? fmtLunaShort(d.lunaKey) : (d.luna||'—'))+'</td>' +
         '<td><div class="row-actions">' +
           '<button class="icon-btn" data-act="edit" title="Editează">✎</button>' +
           '<button class="icon-btn danger" data-act="del" title="Șterge">✕</button>' +
