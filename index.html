@@ -146,6 +146,8 @@
   td.crt, th.crt{padding-inline:8px;}
   td[data-role="nr"]{cursor:text;}
   td[data-role="nr"].copied-flash{background:var(--good-soft); color:var(--good); border-radius:5px;}
+  td[data-role="cui"]{cursor:pointer;}
+  td[data-role="cui"].copied-flash{background:var(--good-soft); color:var(--good); border-radius:5px;}
   td[data-role="nr"] input{
     width:100%; font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right;
     font-size:14.5px; padding:2px 5px; border:1px solid var(--accent); border-radius:5px;
@@ -200,6 +202,7 @@
     border:1px solid var(--border); border-radius:8px; padding:8px 10px; width:100%;
   }
   .field input[type="number"]{font-family:var(--font-mono);}
+  .field input[readonly]{background:var(--surface-2); color:var(--text-dim); font-family:var(--font-mono);}
   .field textarea{resize:vertical; min-height:38px; font-family:var(--font-body);}
   .toggle-row{display:flex; flex-wrap:wrap; gap:8px;}
   .modal-actions{display:flex; justify-content:space-between; align-items:center; margin-top:18px; gap:10px;}
@@ -233,9 +236,8 @@
 
   <header>
     <div>
-      <p class="eyebrow">Diana Audit Expert · ORC · sincronizat cu Google Drive</p>
+      <p class="eyebrow">ORC · sincronizat cu Google Drive</p>
       <h1>Registru dosare ORC</h1>
-      <p class="subtitle">Evidența dosarelor de înregistrare depuse la Oficiul Registrului Comerțului — datele se salvează automat într-un fișier din Google Drive-ul tău, accesibil de pe orice dispozitiv</p>
     </div>
     <div id="save-status"><span class="dot"></span><span id="save-status-text">se conectează…</span></div>
   </header>
@@ -294,7 +296,9 @@
               <th>Taxă</th>
               <th>Achitat</th>
               <th class="num">Încasat</th>
+              <th class="num">Cheltuieli</th>
               <th class="num">Rămas</th>
+              <th>CUI</th>
               <th>Lună</th>
               <th></th>
             </tr>
@@ -367,8 +371,16 @@
         <input id="f-tarif" type="number" step="0.01" inputmode="decimal">
       </div>
       <div class="field">
-        <label for="f-ramas">Sumă rămasă (lei)</label>
-        <input id="f-ramas" type="text" placeholder="ex. 758 sau o notă">
+        <label for="f-cheltuieli">Cheltuieli (lei)</label>
+        <input id="f-cheltuieli" type="number" step="0.01" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="f-cui">CUI</label>
+        <input id="f-cui" type="text" placeholder="ex. 48778113">
+      </div>
+      <div class="field">
+        <label for="f-ramas">Rămas (calculat automat)</label>
+        <input id="f-ramas" type="text" readonly>
       </div>
       <div class="field span2">
         <label>Stadiu dosar</label>
@@ -622,7 +634,7 @@
 
   var els = {};
   ["search","filter-luna","filter-status","sort-by","stats","tbody","empty-state",
-   "btn-add","btn-export","form-overlay","form-title","f-nume","f-nr","f-luna","f-tarif","f-ramas","f-nota",
+   "btn-add","btn-export","form-overlay","form-title","f-nume","f-nr","f-luna","f-tarif","f-cheltuieli","f-cui","f-ramas","f-nota",
    "f-stadiu-row","f-taxa-row","f-achitat-row",
    "btn-save","btn-cancel","btn-delete","confirm-overlay","confirm-name","confirm-cancel","confirm-ok",
    "save-status","save-status-text","banner","drive-connect-bar","btn-drive-connect",
@@ -709,12 +721,13 @@
   function refreshMonthFilterOptions(){
     var keys = {};
     docs.forEach(function(d){ if(d.lunaKey) keys[d.lunaKey] = d.luna || fmtLunaFromKey(d.lunaKey); });
+    var now = new Date();
+    var curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    if(!keys[curKey]) keys[curKey] = fmtLunaFromKey(curKey); // luna curentă apare mereu în listă, chiar dacă nu are încă dosare
     var sortedKeys = Object.keys(keys).sort().reverse();
     var current = els.filterLuna.value || 'all';
-    if(!monthFilterInitialized && docs.length){
-      var now = new Date();
-      var curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-      if(sortedKeys.indexOf(curKey) !== -1) current = curKey;
+    if(!monthFilterInitialized){
+      current = curKey; // la deschidere, se selectează mereu luna curentă (nu ultima lună cu date)
       monthFilterInitialized = true;
     }
     els.filterLuna.innerHTML = '<option value="all">Toate lunile</option>' +
@@ -730,7 +743,7 @@
     var list = docs.filter(function(d){
       if(lunaF !== 'all' && d.lunaKey !== lunaF) return false;
       if(q){
-        var hay = (d.nume||'').toLowerCase() + ' ' + (d.nrInregistrare||'').toLowerCase();
+        var hay = (d.nume||'').toLowerCase() + ' ' + (d.nrInregistrare||'').toLowerCase() + ' ' + (d.cui||'').toLowerCase();
         if(hay.indexOf(q) === -1) return false;
       }
       if(statusF === 'pe-flux' && !(d.depus && !d.admis && !d.eliberat)) return false;
@@ -871,7 +884,9 @@
         '<td data-role="taxa">'+taxaChip+'</td>' +
         '<td data-role="achitat">'+achitatChip+'</td>' +
         '<td class="num">'+ (d.tarif!=null ? fmtMoney(d.tarif) : '—') +'</td>' +
+        '<td class="num">'+ (d.cheltuieli!=null ? fmtMoney(d.cheltuieli) : '—') +'</td>' +
         '<td class="num">'+ escapeHtml(ramasDisplay) +'</td>' +
+        '<td data-role="cui" title="'+(d.cui?'Dublu-click pentru a copia CUI':'')+'">'+escapeHtml(d.cui||'—')+'</td>' +
         '<td class="luna">'+escapeHtml(d.luna||fmtLunaFromKey(d.lunaKey))+'</td>' +
         '<td><div class="row-actions">' +
           '<button class="icon-btn" data-act="edit" title="Editează">✎</button>' +
@@ -1014,12 +1029,11 @@
     sel.removeAllRanges();
     sel.addRange(range);
   }
-  function copyNrToClipboard(cell, d){
-    var text = d.nrInregistrare || '';
+  function copyTextToClipboard(cell, text, afterRerender){
     function flashCopied(){
       cell.textContent = 'Copiat ✓';
       cell.classList.add('copied-flash');
-      setTimeout(function(){ renderTable(); }, 900);
+      setTimeout(function(){ afterRerender(); }, 900);
     }
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(text).then(flashCopied).catch(function(){ selectCellText(cell); });
@@ -1027,19 +1041,41 @@
       selectCellText(cell);
     }
   }
+  function copyNrToClipboard(cell, d){
+    copyTextToClipboard(cell, d.nrInregistrare || '', renderTable);
+  }
+  function copyCuiToClipboard(cell, d, afterRerender){
+    copyTextToClipboard(cell, d.cui || '', afterRerender);
+  }
 
   els.tbody.addEventListener('dblclick', function(e){
-    var cell = e.target.closest('td[data-role="nr"]');
+    var nrCell = e.target.closest('td[data-role="nr"]');
+    var cuiCell = e.target.closest('td[data-role="cui"]');
+    var cell = nrCell || cuiCell;
     if(!cell) return;
     var tr = cell.closest('tr[data-id]');
     if(!tr) return;
     var d = docs.find(function(x){ return x.id === tr.getAttribute('data-id'); });
     if(!d) return;
-    if(d.nrInregistrare) copyNrToClipboard(cell, d);
-    else startInlineNrEdit(cell, d);
+    if(nrCell){
+      if(d.nrInregistrare) copyNrToClipboard(nrCell, d);
+      else startInlineNrEdit(nrCell, d);
+    } else if(cuiCell && d.cui){
+      copyCuiToClipboard(cuiCell, d, renderTable);
+    }
   });
 
   // ---------- add/edit modal ----------
+  // Rămas = Încasat − Cheltuieli, calculat automat și afișat pe loc (câmpul e doar-citire);
+  // dacă nu e trecut nimic la Cheltuieli, se consideră 0.
+  function updateRamasPreview(){
+    var tarif = els.fTarif.value === '' ? 0 : (parseFloat(els.fTarif.value) || 0);
+    var cheltuieli = els.fCheltuieli.value === '' ? 0 : (parseFloat(els.fCheltuieli.value) || 0);
+    els.fRamas.value = fmtMoney(tarif - cheltuieli);
+  }
+  els.fTarif.addEventListener('input', updateRamasPreview);
+  els.fCheltuieli.addEventListener('input', updateRamasPreview);
+
   function openAdd(){
     editingId = null;
     els.formTitle.textContent = 'Dosar nou';
@@ -1049,8 +1085,10 @@
     var d = new Date();
     els.fLuna.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
     els.fTarif.value = '';
-    els.fRamas.value = '';
+    els.fCheltuieli.value = '';
+    els.fCui.value = '';
     els.fNota.value = '';
+    updateRamasPreview();
     formState = {stadiu:'in-lucru', areTaxa:null, taxaAchitata:null};
     renderFormToggles();
     els.formOverlay.classList.add('show');
@@ -1065,8 +1103,10 @@
     els.fNr.value = d.nrInregistrare || '';
     els.fLuna.value = d.lunaKey || '';
     els.fTarif.value = d.tarif != null ? d.tarif : '';
-    els.fRamas.value = d.sumaRamasa != null ? d.sumaRamasa : (d.sumaRamasaText || '');
+    els.fCheltuieli.value = d.cheltuieli != null ? d.cheltuieli : '';
+    els.fCui.value = d.cui || '';
     els.fNota.value = d.nota || '';
+    updateRamasPreview();
     var stadiu = d.eliberat ? 'eliberat' : (d.admis ? 'admis' : (d.depus ? 'depus' : 'in-lucru'));
     formState = {stadiu: stadiu, areTaxa: (d.areTaxa===true||d.areTaxa===false)?d.areTaxa:null, taxaAchitata: d.taxaAchitata===true};
     if(d.areTaxa !== true) formState.taxaAchitata = null;
@@ -1085,18 +1125,19 @@
     var nume = els.fNume.value.trim();
     if(!nume){ els.fNume.focus(); return; }
     var lunaKey = els.fLuna.value || '';
-    var ramasRaw = els.fRamas.value.trim();
-    var ramasNum = ramasRaw === '' ? null : parseNumericLoose(ramasRaw);
-    var ramasIsPureNumber = ramasRaw !== '' && /^-?\d+([.,]\d+)?$/.test(ramasRaw);
+    var tarifVal = els.fTarif.value === '' ? null : parseFloat(els.fTarif.value);
+    var cheltuieliVal = els.fCheltuieli.value === '' ? null : parseFloat(els.fCheltuieli.value);
 
     var data = {
       nume: nume,
       nrInregistrare: els.fNr.value.trim(),
       lunaKey: lunaKey,
       luna: fmtLunaFromKey(lunaKey) || lunaKey,
-      tarif: els.fTarif.value === '' ? null : parseFloat(els.fTarif.value),
-      sumaRamasa: ramasIsPureNumber ? ramasNum : null,
-      sumaRamasaText: ramasIsPureNumber ? null : (ramasRaw || null),
+      tarif: tarifVal,
+      cheltuieli: cheltuieliVal,
+      cui: els.fCui.value.trim(),
+      sumaRamasa: (tarifVal||0) - (cheltuieliVal||0),
+      sumaRamasaText: null,
       admis: (formState.stadiu === 'admis' || formState.stadiu === 'eliberat'),
       depus: (formState.stadiu === 'admis' || formState.stadiu === 'depus' || formState.stadiu === 'eliberat'),
       eliberat: formState.stadiu === 'eliberat',
@@ -1188,12 +1229,14 @@
   }
   els.btnExport.addEventListener('click', function(){
     var list = getFiltered();
-    var header = ['Firma','Nr. inregistrare','Luna','Incasat','Suma ramasa','Depus','Admis','Are taxa','Taxa achitata','Eliberat','Nota'];
+    var header = ['Firma','Nr. inregistrare','Luna','Incasat','Cheltuieli','Suma ramasa','CUI','Depus','Admis','Are taxa','Taxa achitata','Eliberat','Nota'];
     var rows = list.map(function(d){
       return [
         d.nume, d.nrInregistrare, d.luna,
         d.tarif!=null?d.tarif:'',
+        d.cheltuieli!=null?d.cheltuieli:'',
         d.sumaRamasa!=null?d.sumaRamasa:(d.sumaRamasaText||''),
+        d.cui||'',
         d.depus?'Da':'Nu',
         d.admis?'Da':'Nu',
         d.areTaxa===true?'Da':(d.areTaxa===false?'Nu':''),
@@ -1358,7 +1401,7 @@
       return '<tr data-id="'+d.id+'">' +
         '<td class="num crt">'+(idx+1)+'</td>' +
         '<td class="nume">'+escapeHtml(d.nume)+'</td>' +
-        '<td>'+escapeHtml(d.cui||'—')+'</td>' +
+        '<td data-role="cui" title="'+(d.cui?'Dublu-click pentru a copia CUI':'')+'">'+escapeHtml(d.cui||'—')+'</td>' +
         '<td>'+escapeHtml(fmtDateRo(d.dataPublicareMof)||'—')+'</td>' +
         '<td>'+termenChip+'</td>' +
         '<td class="num">'+ramasDisplay+'</td>' +
@@ -1383,6 +1426,16 @@
     if(actBtn.dataset.act === 'edit') openEditDizolvare(d);
     if(actBtn.dataset.act === 'del') openConfirmDeleteDizolvare(d);
     if(actBtn.dataset.act === 'transfer') openTransferConfirm(d);
+  });
+
+  els.tbodyDizolvari.addEventListener('dblclick', function(e){
+    var cuiCell = e.target.closest('td[data-role="cui"]');
+    if(!cuiCell) return;
+    var tr = cuiCell.closest('tr[data-id]');
+    if(!tr) return;
+    var d = dizolvariDocs.find(function(x){ return x.id === tr.getAttribute('data-id'); });
+    if(!d || !d.cui) return;
+    copyCuiToClipboard(cuiCell, d, renderTableDizolvari);
   });
 
   // ---------- db writes — dizolvări ----------
