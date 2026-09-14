@@ -845,11 +845,10 @@
     }
     els.emptyState.style.display = 'none';
 
-    var crtCounts = {};
+    var nrCrtCounter = 0;
     els.tbody.innerHTML = list.map(function(d){
-      var lunaKeyForCrt = d.lunaKey || '—';
-      crtCounts[lunaKeyForCrt] = (crtCounts[lunaKeyForCrt] || 0) + 1;
-      var nrCrt = crtCounts[lunaKeyForCrt];
+      nrCrtCounter++;
+      var nrCrt = nrCrtCounter;
 
       var stadiuChip;
       if(d.eliberat) stadiuChip = inlineChip('Eliberat', 'on-archived');
