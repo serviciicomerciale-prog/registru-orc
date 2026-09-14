@@ -262,11 +262,11 @@
       <select id="filter-luna"></select>
       <select id="filter-status">
         <option value="all">Toate stadiile</option>
-        <option value="pe-flux">Dosare pe flux (depuse și înregistrate)</option>
-        <option value="taxa-neachitata">Taxe neachitate (admise, taxă neachitată)</option>
-        <option value="neeliberate">Neeliberate (taxă achitată, neeliberate)</option>
-        <option value="eliberat">Eliberate</option>
         <option value="nedepus">În lucru (nedepuse)</option>
+        <option value="pe-flux">Dosare pe flux</option>
+        <option value="taxa-neachitata">De achitat taxa (admise, taxă neachitată)</option>
+        <option value="neeliberate">De eliberat (taxă achitată, neeliberate)</option>
+        <option value="eliberat">Eliberate</option>
       </select>
       <select id="sort-by">
         <option value="nr-per-luna" selected>Sortează: nr. înregistrare</option>
@@ -356,15 +356,15 @@
     <div class="field-grid">
       <div class="field span2">
         <label for="f-nume">Firmă / client</label>
-        <input id="f-nume" type="text" placeholder="ex. Real Instant Service SRL">
+        <input id="f-nume" type="text">
       </div>
       <div class="field">
-        <label for="f-nr">Nr. înregistrare ORC</label>
-        <input id="f-nr" type="text" placeholder="ex. 3667212">
+        <label for="f-cui">CUI</label>
+        <input id="f-cui" type="text">
       </div>
       <div class="field">
-        <label for="f-luna">Lună depunere</label>
-        <input id="f-luna" type="month">
+        <label for="f-nr">Nr. înregistrare dosar</label>
+        <input id="f-nr" type="text">
       </div>
       <div class="field">
         <label for="f-tarif">Încasat (lei)</label>
@@ -375,12 +375,12 @@
         <input id="f-cheltuieli" type="number" step="0.01" inputmode="decimal">
       </div>
       <div class="field">
-        <label for="f-cui">CUI</label>
-        <input id="f-cui" type="text" placeholder="ex. 48778113">
-      </div>
-      <div class="field">
         <label for="f-ramas">Rămas (calculat automat)</label>
         <input id="f-ramas" type="text" readonly>
+      </div>
+      <div class="field">
+        <label for="f-luna">Lună depunere</label>
+        <input id="f-luna" type="month">
       </div>
       <div class="field span2">
         <label>Stadiu dosar</label>
@@ -396,7 +396,7 @@
       </div>
       <div class="field span2">
         <label for="f-nota">Notă</label>
-        <textarea id="f-nota" rows="2" placeholder="ex. Factura Vlad, amânat, persoană fizică…"></textarea>
+        <textarea id="f-nota" rows="2" placeholder="ex. Factura pe firmă, amânat, persoană fizică…"></textarea>
       </div>
     </div>
     <div class="modal-actions">
@@ -696,9 +696,7 @@
   function renderFormToggles(){
     renderToggleGroup(els.fStadiuRow, [
       {value:'in-lucru', label:'În lucru', onClass:''},
-      {value:'depus', label:'Depus', onClass:'on-accent-outline'},
-      {value:'admis', label:'Admis', onClass:'on-good'},
-      {value:'eliberat', label:'Eliberat', onClass:'on-archived'}
+      {value:'depus', label:'Depus', onClass:'on-accent-outline'}
     ], formState.stadiu, function(v){ formState.stadiu = v; renderFormToggles(); });
 
     renderToggleGroup(els.fTaxaRow, [
@@ -754,7 +752,7 @@
         var hay = (d.nume||'').toLowerCase() + ' ' + (d.nrInregistrare||'').toLowerCase() + ' ' + (d.cui||'').toLowerCase();
         if(hay.indexOf(q) === -1) return false;
       }
-      if(statusF === 'pe-flux' && !(d.depus && !d.admis && !d.eliberat)) return false;
+      if(statusF === 'pe-flux' && !(d.depus && !d.eliberat)) return false;
       if(statusF === 'taxa-neachitata' && !(d.admis && !d.eliberat && d.areTaxa === true && d.taxaAchitata !== true)) return false;
       if(statusF === 'neeliberate' && !(d.admis && !d.eliberat && !(d.areTaxa === true && d.taxaAchitata !== true))) return false;
       if(statusF === 'eliberat' && !d.eliberat) return false;
@@ -815,13 +813,13 @@
     list.forEach(function(d){
       if(d.admis && !d.eliberat && d.areTaxa === true && d.taxaAchitata !== true) admisTaxaNeachitata++;
       if(d.admis && !d.eliberat) admisNeeliberat++;
-      if(d.depus && !d.admis && !d.eliberat) peFlux++; // înregistrate + depuse, la ORC
+      if(d.depus && !d.eliberat) peFlux++; // depuse, înregistrate și admise — cât timp nu au fost eliberate
       if(!d.depus) inLucru++;
     });
     var tiles = [
       {label:'Dosare', value: count, cls:''},
-      {label:'Admis, taxă neachitată', value: admisTaxaNeachitata, cls:'bad'},
-      {label:'Admis, neeliberat', value: admisNeeliberat, cls:'warn'},
+      {label:'De achitat taxa', value: admisTaxaNeachitata, cls:'bad'},
+      {label:'De eliberat', value: admisNeeliberat, cls:'warn'},
       {label:'Dosare pe flux', value: peFlux, cls:''},
       {label:'În lucru (nedepuse)', value: inLucru, cls:''}
     ];
@@ -926,6 +924,20 @@
   // multe ori la rând (ca să se ajungă la stadiul dorit) fără ca rândul să sară în tabel
   // de fiecare dată. Abia după o mică pauză fără clickuri, rândul sare la poziția corectă.
   var STADIU_PIN_DELAY_MS = 1800;
+  function pinStadiuRank(id, rank){
+    var existing = pinnedStadiuRank[id];
+    if(existing && existing.timer) clearTimeout(existing.timer);
+    pinnedStadiuRank[id] = {rank: rank, timer: null};
+  }
+  function schedulePinRelease(id, delay){
+    var existing = pinnedStadiuRank[id];
+    if(!existing) return;
+    if(existing.timer) clearTimeout(existing.timer);
+    existing.timer = setTimeout(function(){
+      delete pinnedStadiuRank[id];
+      renderTable();
+    }, delay);
+  }
   function cycleStadiu(d){
     var enteringDepus = (!d.depus && !d.admis && !d.eliberat);
     var patch;
@@ -936,18 +948,16 @@
 
     var existingPin = pinnedStadiuRank[d.id];
     var rankToPin = existingPin ? existingPin.rank : rawStadiuRank(d);
-    if(existingPin) clearTimeout(existingPin.timer);
-    var timer = setTimeout(function(){
-      delete pinnedStadiuRank[d.id];
-      renderTable();
-    }, STADIU_PIN_DELAY_MS);
-    pinnedStadiuRank[d.id] = {rank: rankToPin, timer: timer};
+    pinStadiuRank(d.id, rankToPin);
 
     patchDoc(d.id, patch);
 
     // La trecerea în "Depus", dacă nu se știe încă dacă are taxă, întreabă imediat —
-    // ca să nu rămână uitat și descoperit abia mai târziu.
+    // ca să nu rămână uitat și descoperit abia mai târziu. Cât timp promptul e deschis,
+    // rândul rămâne fixat pe loc (vezi closeTaxaPrompt) — nu doar STADIU_PIN_DELAY_MS,
+    // ca să nu sară din tabel chiar când utilizatoarea răspunde la el.
     if(enteringDepus && d.areTaxa == null) openTaxaPrompt(d);
+    else schedulePinRelease(d.id, STADIU_PIN_DELAY_MS);
   }
 
   // ---------- prompt taxă la marcarea ca Depus ----------
@@ -956,7 +966,13 @@
     els.taxaPromptName.textContent = d.nume;
     els.taxaPromptOverlay.classList.add('show');
   }
-  function closeTaxaPrompt(){ els.taxaPromptOverlay.classList.remove('show'); pendingTaxaPromptId = null; }
+  function closeTaxaPrompt(){
+    els.taxaPromptOverlay.classList.remove('show');
+    // Rândul a rămas fixat pe loc cât a fost promptul deschis — abia acum pornește
+    // pauza obișnuită înainte să sară la poziția lui nouă în tabel.
+    if(pendingTaxaPromptId) schedulePinRelease(pendingTaxaPromptId, STADIU_PIN_DELAY_MS);
+    pendingTaxaPromptId = null;
+  }
   els.taxaPromptSkip.addEventListener('click', closeTaxaPrompt);
   els.taxaPromptOverlay.addEventListener('click', function(e){ if(e.target === els.taxaPromptOverlay) closeTaxaPrompt(); });
   els.taxaPromptNo.addEventListener('click', function(){
@@ -1018,8 +1034,22 @@
       if(settled) return;
       settled = true;
       var val = input.value.trim();
-      if(val !== (d.nrInregistrare||'')) patchDoc(d.id, {nrInregistrare: val});
-      else renderTable();
+      if(val === (d.nrInregistrare||'')){ renderTable(); return; }
+
+      var patch = {nrInregistrare: val};
+      var wasInLucru = (!d.depus && !d.admis && !d.eliberat);
+      var advancesToInregistrat = wasInLucru && val !== '';
+      if(advancesToInregistrat){
+        patch.depus = true;
+        var existingPin = pinnedStadiuRank[d.id];
+        var rankToPin = existingPin ? existingPin.rank : rawStadiuRank(d);
+        pinStadiuRank(d.id, rankToPin);
+      }
+
+      patchDoc(d.id, patch);
+
+      if(advancesToInregistrat && d.areTaxa == null) openTaxaPrompt(d);
+      else if(advancesToInregistrat) schedulePinRelease(d.id, STADIU_PIN_DELAY_MS);
     }
     input.addEventListener('blur', finish);
     input.addEventListener('keydown', function(ev){
